@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Telegram Poker Mini App</title>
+  <!-- Telegram WebApp JS SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top Bar -->
+    <header class="top-bar">
+      <div class="table-title">
+        <span class="title-text">♠ TEXAS HOLD'EM</span>
+        <span class="status-badge" id="stage-badge">WAITING</span>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="btn-add-bot">+ Add Bot</button>
+      </div>
+    </header>
+
+    <!-- Table Canvas Area -->
+    <main class="table-container">
+      <div class="poker-felt">
+        <!-- Center: Pot & Community Cards -->
+        <div class="table-center">
+          <div class="pot-badge">
+            <span class="pot-label">POT</span>
+            <span class="pot-amount" id="pot-amount">0</span>
+            <span style="font-size: 13px;">🪙</span>
+          </div>
+          <div class="community-cards" id="community-cards">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Seats Ring -->
+        <div class="seats-grid" id="seats-container">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+    </main>
+
+    <!-- Status & Game Log Banner -->
+    <div class="game-log-banner" id="game-log">
+      <span>Welcome to Telegram Poker Mini App!</span>
+    </div>
+
+    <!-- Bottom Controls Panel -->
+    <footer class="action-panel">
+      <!-- In-Game Betting Actions -->
+      <div id="controls-playing" style="display: none; flex-direction: column; gap: 8px;">
+        <div class="raise-slider-box">
+          <span style="font-size: 11px; font-weight: 700; color: #9ca3af;">RAISE</span>
+          <input type="range" id="raise-slider" class="raise-slider" min="20" max="200" step="20" value="20">
+          <span class="raise-amount-tag" id="raise-amount-val">+20</span>
+        </div>
+        <div class="action-buttons">
+          <button class="btn-action btn-fold" id="btn-fold">
+            <span>FOLD</span>
+            <span class="btn-subtext">Give Up</span>
+          </button>
+          <button class="btn-action btn-call" id="btn-call">
+            <span id="btn-call-label">CHECK</span>
+            <span class="btn-subtext">Match Bet</span>
+          </button>
+          <button class="btn-action btn-raise" id="btn-raise">
+            <span id="btn-raise-label">RAISE</span>
+            <span class="btn-subtext">Increase</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pre-Game / Next Hand Controls -->
+      <div id="controls-waiting">
+        <button class="btn-start-game" id="btn-start-game">Deal New Hand</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: telegram-poker-app
+    env: python
+    region: oregon
+    plan: free
+    rootDir: telegram-mini-app
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python server.py"
+    envVars:
+      - key: PORT
+        value: 10000
