@@ -10,76 +10,118 @@
 </head>
 <body>
   <div id="app">
-    <!-- Top Bar -->
-    <header class="top-bar">
-      <div class="table-title">
-        <span class="title-text" id="table-display-name">♠ TEXAS HOLD'EM</span>
-        <span class="status-badge" id="stage-badge">WAITING</span>
-      </div>
-      <div class="top-actions">
-        <button class="icon-btn" id="btn-tables">🎲 Rooms</button>
-        <button class="icon-btn" id="btn-add-bot">+ Bot</button>
-        <button class="icon-btn admin-toggle-btn" id="btn-admin-panel">⚙️ Admin</button>
-      </div>
-    </header>
-
-    <!-- Table Canvas Area -->
-    <main class="table-container">
-      <div class="poker-felt">
-        <!-- Center: Pot & Community Cards -->
-        <div class="table-center">
-          <div class="pot-badge">
-            <span class="pot-label">POT</span>
-            <span class="pot-amount" id="pot-amount">0</span>
-            <span style="font-size: 13px;">🪙</span>
-          </div>
-          <div class="community-cards" id="community-cards">
-            <!-- Rendered by JS -->
+    <!-- VIEW 1: LOBBY VIEW (Default on startup) -->
+    <div id="view-lobby" class="view-screen">
+      <!-- Lobby Header -->
+      <header class="lobby-header">
+        <div class="lobby-user-card">
+          <div class="lobby-avatar" id="lobby-user-avatar">👤</div>
+          <div class="lobby-user-details">
+            <span class="lobby-username" id="lobby-user-name">Player</span>
+            <span class="lobby-tag">Poker Club</span>
           </div>
         </div>
-
-        <!-- Seats Ring -->
-        <div class="seats-grid" id="seats-container">
-          <!-- Rendered dynamically -->
+        <div class="lobby-balance-pill">
+          <span class="balance-label">CHIPS</span>
+          <span class="balance-amount" id="lobby-user-chips">1,000</span>
+          <span style="font-size: 14px;">🪙</span>
         </div>
-      </div>
-    </main>
+      </header>
 
-    <!-- Status & Game Log Banner -->
-    <div class="game-log-banner" id="game-log">
-      <span>Welcome to Telegram Poker Mini App!</span>
+      <!-- Lobby Main Content -->
+      <main class="lobby-main">
+        <div class="lobby-section-header">
+          <span class="lobby-section-title">♠️ ACTIVE POKER TABLES</span>
+          <button class="icon-btn admin-toggle-btn" id="btn-lobby-admin">⚙️ Admin</button>
+        </div>
+
+        <!-- Create Room Input Bar -->
+        <div class="create-room-box" style="margin-bottom: 14px;">
+          <input type="text" id="lobby-new-room-name" class="admin-input" placeholder="Create new room (e.g. High Rollers)">
+          <button class="modal-btn" id="btn-lobby-create-room" style="white-space: nowrap; width: auto; padding: 10px 16px;">+ Create</button>
+        </div>
+
+        <!-- Rooms List -->
+        <div class="rooms-list lobby-rooms-container" id="lobby-rooms-container">
+          <!-- Rendered dynamically by JS -->
+        </div>
+      </main>
     </div>
 
-    <!-- Bottom Controls Panel -->
-    <footer class="action-panel">
-      <!-- In-Game Betting Actions -->
-      <div id="controls-playing" style="display: none; flex-direction: column; gap: 8px;">
-        <div class="raise-slider-box">
-          <span style="font-size: 11px; font-weight: 700; color: #9ca3af;">RAISE</span>
-          <input type="range" id="raise-slider" class="raise-slider" min="20" max="200" step="20" value="20">
-          <span class="raise-amount-tag" id="raise-amount-val">+20</span>
+    <!-- VIEW 2: GAME ROOM VIEW -->
+    <div id="view-game" class="view-screen" style="display: none;">
+      <!-- Top Bar -->
+      <header class="top-bar">
+        <div class="table-title">
+          <span class="title-text" id="table-display-name">♠ TEXAS HOLD'EM</span>
+          <span class="status-badge" id="stage-badge">WAITING</span>
         </div>
-        <div class="action-buttons">
-          <button class="btn-action btn-fold" id="btn-fold">
-            <span>FOLD</span>
-            <span class="btn-subtext">Give Up</span>
-          </button>
-          <button class="btn-action btn-call" id="btn-call">
-            <span id="btn-call-label">CHECK</span>
-            <span class="btn-subtext">Match Bet</span>
-          </button>
-          <button class="btn-action btn-raise" id="btn-raise">
-            <span id="btn-raise-label">RAISE</span>
-            <span class="btn-subtext">Increase</span>
-          </button>
+        <div class="top-actions">
+          <button class="icon-btn" id="btn-back-lobby">🚪 Lobby</button>
+          <button class="icon-btn" id="btn-tables">🎲 Rooms</button>
+          <button class="icon-btn" id="btn-add-bot">+ Bot</button>
+          <button class="icon-btn admin-toggle-btn" id="btn-admin-panel">⚙️ Admin</button>
         </div>
+      </header>
+
+      <!-- Table Canvas Area -->
+      <main class="table-container">
+        <div class="poker-felt">
+          <!-- Center: Pot & Community Cards -->
+          <div class="table-center">
+            <div class="pot-badge">
+              <span class="pot-label">POT</span>
+              <span class="pot-amount" id="pot-amount">0</span>
+              <span style="font-size: 13px;">🪙</span>
+            </div>
+            <div class="community-cards" id="community-cards">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Seats Ring -->
+          <div class="seats-grid" id="seats-container">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </main>
+
+      <!-- Status & Game Log Banner -->
+      <div class="game-log-banner" id="game-log">
+        <span>Welcome to Telegram Poker Mini App!</span>
       </div>
 
-      <!-- Pre-Game / Next Hand Controls -->
-      <div id="controls-waiting">
-        <button class="btn-start-game" id="btn-start-game">Deal New Hand</button>
-      </div>
-    </footer>
+      <!-- Bottom Controls Panel -->
+      <footer class="action-panel">
+        <!-- In-Game Betting Actions -->
+        <div id="controls-playing" style="display: none; flex-direction: column; gap: 8px;">
+          <div class="raise-slider-box">
+            <span style="font-size: 11px; font-weight: 700; color: #9ca3af;">RAISE</span>
+            <input type="range" id="raise-slider" class="raise-slider" min="20" max="200" step="20" value="20">
+            <span class="raise-amount-tag" id="raise-amount-val">+20</span>
+          </div>
+          <div class="action-buttons">
+            <button class="btn-action btn-fold" id="btn-fold">
+              <span>FOLD</span>
+              <span class="btn-subtext">Give Up</span>
+            </button>
+            <button class="btn-action btn-call" id="btn-call">
+              <span id="btn-call-label">CHECK</span>
+              <span class="btn-subtext">Match Bet</span>
+            </button>
+            <button class="btn-action btn-raise" id="btn-raise">
+              <span id="btn-raise-label">RAISE</span>
+              <span class="btn-subtext">Increase</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pre-Game / Next Hand Controls -->
+        <div id="controls-waiting">
+          <button class="btn-start-game" id="btn-start-game">Deal New Hand</button>
+        </div>
+      </footer>
+    </div>
 
     <!-- MODAL: Win / Result Celebration Screen -->
     <div class="modal-overlay" id="modal-winner" style="display: none;">

@@ -7,7 +7,9 @@ if (tg) {
 
 // Extract table_id and user_id from Telegram initData or URL search params
 const urlParams = new URLSearchParams(window.location.search);
-let tableId = urlParams.get('table') || 'main_room';
+// Default to lobby unless a specific room is targeted in URL query
+let tableId = urlParams.get('table') || 'lobby';
+let userChips = 1000;
 let adminToken = urlParams.get('admin_token') || localStorage.getItem('poker_admin_token') || '';
 
 // Telegram User info or Fallback
@@ -33,6 +35,20 @@ let reconnectTimer = null;
 let isAdmin = false;
 let availableTables = [];
 let lastShownWinnerId = null;
+
+// Views
+const viewLobby = document.getElementById('view-lobby');
+const viewGame = document.getElementById('view-game');
+
+// Lobby Elements
+const lobbyUserAvatar = document.getElementById('lobby-user-avatar');
+const lobbyUserName = document.getElementById('lobby-user-name');
+const lobbyUserChips = document.getElementById('lobby-user-chips');
+const lobbyRoomsContainer = document.getElementById('lobby-rooms-container');
+const lobbyNewRoomName = document.getElementById('lobby-new-room-name');
+const btnLobbyCreateRoom = document.getElementById('btn-lobby-create-room');
+const btnLobbyAdmin = document.getElementById('btn-lobby-admin');
+const btnBackLobby = document.getElementById('btn-back-lobby');
 
 // UI Elements
 const tableDisplayNameEl = document.getElementById('table-display-name');
@@ -96,7 +112,9 @@ function connectWebSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'init') {
         if (msg.is_admin) setAdminAuthorized(true);
+        if (msg.chips !== undefined) updateLobbyBalance(msg.chips);
         if (msg.tables) renderRoomsList(msg.tables);
+        updateActiveView();
       } else if (msg.type === 'state') {
         renderGameState(msg.data);
       } else if (msg.type === 'tables_list') {
@@ -304,54 +322,78 @@ function showWinnerModal(winInfo) {
   modalWinner.style.display = 'flex';
 }
 
+function updateActiveView() {
+  if (tableId === 'lobby') {
+    viewLobby.style.display = 'flex';
+    viewGame.style.display = 'none';
+  } else {
+    viewLobby.style.display = 'none';
+    viewGame.style.display = 'flex';
+  }
+}
+
+function updateLobbyBalance(chips) {
+  userChips = chips;
+  lobbyUserChips.innerText = Number(chips).toLocaleString();
+  lobbyUserName.innerText = currentUser.name;
+  if (currentUser.avatar) {
+    lobbyUserAvatar.innerHTML = `<img src="${currentUser.avatar}" alt="${currentUser.name}"/>`;
+  }
+}
+
 function renderRoomsList(tables) {
   availableTables = tables || [];
-  roomsListContainer.innerHTML = '';
   
-  if (availableTables.length === 0) {
-    roomsListContainer.innerHTML = '<div style="color:var(--text-muted); font-size:12px; text-align:center; padding:10px;">No rooms found.</div>';
-    return;
-  }
-
-  availableTables.forEach(t => {
-    const item = document.createElement('div');
-    item.className = 'room-item';
-    const isCurrent = t.table_id === tableId;
-    const canDelete = isAdmin || (t.creator_id && t.creator_id === currentUser.id);
-
-    // Build player profiles preview under room name
-    let playersHtml = '';
-    if (t.players && t.players.length > 0) {
-      const tags = t.players.map(p => {
-        const avatar = p.avatar 
-          ? `<img src="${p.avatar}" alt="${p.name}"/>` 
-          : (p.is_bot ? '🤖' : '👤');
-        return `
-          <div class="room-player-tag">
-            <span class="room-player-avatar-small">${avatar}</span>
-            <span>${p.name}</span>
-          </div>
-        `;
-      }).join('');
-      playersHtml = `<div class="room-players-preview">${tags}</div>`;
-    } else {
-      playersHtml = `<div class="room-players-preview" style="color:var(--text-muted); font-size:11px;">No players yet (Table empty)</div>`;
+  // Render to both containers: modal rooms container and main lobby container
+  [roomsListContainer, lobbyRoomsContainer].forEach(container => {
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (availableTables.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted); font-size:12px; text-align:center; padding:15px;">No active tables found. Create one above!</div>';
+      return;
     }
 
-    item.innerHTML = `
-      <div class="room-header">
-        <div class="room-info">
-          <div class="room-name">${t.name} ${isCurrent ? '<span style="color:var(--gold); font-size:11px;">(Current)</span>' : ''}</div>
-          <div class="room-sub">${t.player_count}/6 players • Stage: ${t.stage} • Pot: ${t.pot}🪙</div>
+    availableTables.forEach(t => {
+      const item = document.createElement('div');
+      item.className = 'room-item';
+      const isCurrent = t.table_id === tableId;
+      const canDelete = isAdmin || (t.creator_id && t.creator_id === currentUser.id);
+
+      // Build player profiles preview under room name
+      let playersHtml = '';
+      if (t.players && t.players.length > 0) {
+        const tags = t.players.map(p => {
+          const avatar = p.avatar 
+            ? `<img src="${p.avatar}" alt="${p.name}"/>` 
+            : (p.is_bot ? '🤖' : '👤');
+          return `
+            <div class="room-player-tag">
+              <span class="room-player-avatar-small">${avatar}</span>
+              <span>${p.name}</span>
+            </div>
+          `;
+        }).join('');
+        playersHtml = `<div class="room-players-preview">${tags}</div>`;
+      } else {
+        playersHtml = `<div class="room-players-preview" style="color:var(--text-muted); font-size:11px;">No players yet (Table empty)</div>`;
+      }
+
+      item.innerHTML = `
+        <div class="room-header">
+          <div class="room-info">
+            <div class="room-name">${t.name} ${isCurrent ? '<span style="color:var(--gold); font-size:11px;">(Current)</span>' : ''}</div>
+            <div class="room-sub">${t.player_count}/6 players • Stage: ${t.stage} • Pot: ${t.pot}🪙</div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            ${!isCurrent ? `<button class="room-action-btn" onclick="switchTable('${t.table_id}')">Join Table</button>` : `<button class="room-action-btn" style="background:var(--gold); color:#000;" onclick="switchTable('${t.table_id}')">Re-enter</button>`}
+            ${canDelete && !isCurrent ? `<button class="room-action-btn danger" onclick="deleteTable('${t.table_id}')">Delete</button>` : ''}
+          </div>
         </div>
-        <div style="display:flex; gap:6px;">
-          ${!isCurrent ? `<button class="room-action-btn" onclick="switchTable('${t.table_id}')">Join</button>` : ''}
-          ${canDelete && !isCurrent ? `<button class="room-action-btn danger" onclick="deleteTable('${t.table_id}')">Delete</button>` : ''}
-        </div>
-      </div>
-      ${playersHtml}
-    `;
-    roomsListContainer.appendChild(item);
+        ${playersHtml}
+      `;
+      container.appendChild(item);
+    });
   });
 }
 
@@ -463,6 +505,24 @@ btnWinNextHand.addEventListener('click', () => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'start_game' }));
   }
+});
+
+// Lobby Action Listeners
+btnLobbyCreateRoom.addEventListener('click', () => {
+  const name = lobbyNewRoomName.value.trim();
+  if (name) {
+    ws.send(JSON.stringify({ type: 'create_room', name: name }));
+    lobbyNewRoomName.value = '';
+  }
+});
+
+btnLobbyAdmin.addEventListener('click', () => {
+  adminPassInput.value = '';
+  modalAdmin.style.display = 'flex';
+});
+
+btnBackLobby.addEventListener('click', () => {
+  switchTable('lobby');
 });
 
 // Room Creation & Admin Logout Elements

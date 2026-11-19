@@ -20,6 +20,9 @@ ADMIN_IDS = [int(x.strip()) for x in os.environ.get("ADMIN_IDS", "").split(",") 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 game_manager = GameManager()
+# User chip repository across sessions/lobby
+user_bankrolls: Dict[int, int] = {}
+DEFAULT_STARTING_CHIPS = 1000
 
 # Table subscribers: table_id -> Set[PokerWebSocketHandler]
 table_connections: Dict[str, Set["PokerWebSocketHandler"]] = {}
@@ -83,50 +86,65 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
         return True
 
     def open(self):
-        self.table_id = self.get_argument("table_id", "main_room")
+        self.table_id = self.get_argument("table_id", "lobby")
         self.user_id = int(self.get_argument("user_id", random.randint(1000, 9999)))
         self.user_name = self.get_argument("name", f"Player_{self.user_id}")
         self.user_avatar = self.get_argument("avatar", "")
         self.is_admin = False
 
+        if self.user_id not in user_bankrolls:
+            user_bankrolls[self.user_id] = DEFAULT_STARTING_CHIPS
+
         # Check if user matches admin criteria
         admin_token = self.get_argument("admin_token", "")
-        if (admin_token and admin_token == ADMIN_SECRET) or (self.user_id in ADMIN_IDS):
+        if (admin_token and ADMIN_SECRET and admin_token == ADMIN_SECRET) or (self.user_id in ADMIN_IDS):
             self.is_admin = True
 
         if self.table_id not in table_connections:
             table_connections[self.table_id] = set()
         table_connections[self.table_id].add(self)
 
-        # Ensure user is removed from any previous table they were at
-        affected_old_tables = game_manager.remove_player_from_all_tables(self.user_id, except_table_id=self.table_id)
-        for old_tid in affected_old_tables:
-            old_table = game_manager.tables.get(old_tid)
-            if old_table:
-                asyncio.create_task(broadcast_table_state(old_table))
+        # If connected to a real game room (not lobby), remove from previous and add to table
+        if self.table_id != "lobby":
+            affected_old_tables = game_manager.remove_player_from_all_tables(self.user_id, except_table_id=self.table_id)
+            for old_tid in affected_old_tables:
+                old_table = game_manager.tables.get(old_tid)
+                if old_table:
+                    asyncio.create_task(broadcast_table_state(old_table))
 
-        table = game_manager.get_or_create_table(self.table_id)
-        try:
-            game_manager.add_player(
-                table_id=self.table_id,
-                user_id=self.user_id,
-                name=self.user_name,
-                avatar=self.user_avatar
-            )
-        except Exception as e:
-            logger.warning("Could not add player: %s", e)
+            table = game_manager.get_or_create_table(self.table_id)
+            try:
+                game_manager.add_player(
+                    table_id=self.table_id,
+                    user_id=self.user_id,
+                    name=self.user_name,
+                    avatar=self.user_avatar,
+                    chips=user_bankrolls[self.user_id]
+                )
+            except Exception as e:
+                logger.warning("Could not add player: %s", e)
 
-        logger.info(f"Client {self.user_name} ({self.user_id}, Admin={self.is_admin}) joined table {self.table_id}")
+            asyncio.create_task(broadcast_table_state(table))
+        else:
+            # If in lobby, ensure player is removed from tables
+            affected_old_tables = game_manager.remove_player_from_all_tables(self.user_id)
+            for old_tid in affected_old_tables:
+                old_table = game_manager.tables.get(old_tid)
+                if old_table:
+                    asyncio.create_task(broadcast_table_state(old_table))
+
+        logger.info(f"Client {self.user_name} ({self.user_id}, Admin={self.is_admin}) connected to {self.table_id}")
         
-        # Send initial confirmation including admin status
+        # Send initial confirmation including admin status, user balance, and tables list
         self.write_message(json.dumps({
             "type": "init",
             "is_admin": self.is_admin,
             "user_id": self.user_id,
+            "chips": user_bankrolls[self.user_id],
+            "table_id": self.table_id,
             "tables": game_manager.list_tables()
         }))
 
-        asyncio.create_task(broadcast_table_state(table))
         asyncio.create_task(broadcast_all_tables())
 
     async def on_message(self, message):
@@ -275,7 +293,14 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
     def on_close(self):
         if self.table_id in table_connections:
             table_connections[self.table_id].discard(self)
-        logger.info(f"Client {self.user_id} disconnected from table {self.table_id}")
+        if self.table_id != "lobby":
+            # Sync user's latest chips back to user_bankrolls
+            table = game_manager.tables.get(self.table_id)
+            if table:
+                p = next((player for player in table.players if player.user_id == self.user_id), None)
+                if p:
+                    user_bankrolls[self.user_id] = p.chips
+        logger.info(f"Client {self.user_id} disconnected from {self.table_id}")
 
 
 def make_app():
