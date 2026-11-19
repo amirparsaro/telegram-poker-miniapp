@@ -35,6 +35,7 @@ let reconnectTimer = null;
 let isAdmin = false;
 let availableTables = [];
 let lastShownWinnerId = null;
+let previousPlayerIds = new Set();
 
 // Views
 const viewLobby = document.getElementById('view-lobby');
@@ -193,7 +194,21 @@ function renderGameState(state) {
   let userIdx = players.findIndex(p => p.user_id === currentUser.id);
   if (userIdx === -1) userIdx = 0;
 
-  seatsContainerEl.innerHTML = '';
+  const currentIds = new Set(players.map(p => p.user_id));
+
+  // Check if any previous players left - animate them out
+  previousPlayerIds.forEach(oldId => {
+    if (!currentIds.has(oldId)) {
+      const existingEl = document.getElementById(`seat-player-${oldId}`);
+      if (existingEl) {
+        existingEl.classList.add('seat-leaving');
+        setTimeout(() => {
+          if (existingEl.parentNode) existingEl.parentNode.removeChild(existingEl);
+        }, 380);
+      }
+    }
+  });
+
   const numPlayers = players.length;
 
   for (let i = 0; i < numPlayers; i++) {
@@ -201,9 +216,16 @@ function renderGameState(state) {
     const player = players[i];
     const isTurn = state.in_hand && (i === state.turn_idx);
     const isDealer = state.in_hand && (i === state.dealer_idx);
+    const isNewJoin = !previousPlayerIds.has(player.user_id);
 
-    const seatEl = document.createElement('div');
-    seatEl.className = `seat seat-${relPos} ${isTurn ? 'active-turn' : ''}`;
+    let seatEl = document.getElementById(`seat-player-${player.user_id}`);
+    const isCreating = !seatEl;
+    if (isCreating) {
+      seatEl = document.createElement('div');
+      seatEl.id = `seat-player-${player.user_id}`;
+    }
+
+    seatEl.className = `seat seat-${relPos} ${isTurn ? 'active-turn' : ''} ${isNewJoin ? 'seat-joining' : ''}`;
 
     let handHtml = '';
     if (player.hand && player.hand.length > 0) {
@@ -246,8 +268,12 @@ function renderGameState(state) {
       ${handHtml}
     `;
 
-    seatsContainerEl.appendChild(seatEl);
+    if (isCreating) {
+      seatsContainerEl.appendChild(seatEl);
+    }
   }
+
+  previousPlayerIds = currentIds;
 
   // Action Panel Controls
   const isMyTurn = state.in_hand && (state.turn_user_id === currentUser.id);

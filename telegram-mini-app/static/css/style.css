@@ -361,8 +361,46 @@ body {
   width: 84px;
   transform: translate(-50%, -50%);
   pointer-events: auto;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   z-index: 5;
+}
+
+/* Join & Leave Seat Animations */
+.seat.seat-joining {
+  animation: seatJoinAnim 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.seat.seat-leaving {
+  animation: seatLeaveAnim 0.4s ease-in forwards;
+}
+
+@keyframes seatJoinAnim {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes seatLeaveAnim {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  40% {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
 }
 
 /* Coordinate mapping for 6 seats */
