@@ -12,10 +12,18 @@ let tableId = urlParams.get('table') || 'lobby';
 let userChips = 1000;
 let adminToken = urlParams.get('admin_token') || localStorage.getItem('poker_admin_token') || '';
 
+let persistentUserId = localStorage.getItem('poker_persistent_user_id');
+if (!persistentUserId) {
+  persistentUserId = Math.floor(100000 + Math.random() * 900000);
+  localStorage.setItem('poker_persistent_user_id', persistentUserId);
+} else {
+  persistentUserId = parseInt(persistentUserId);
+}
+
 // Telegram User info or Fallback
 let currentUser = {
-  id: Math.floor(100000 + Math.random() * 900000),
-  name: 'Player ' + Math.floor(10 + Math.random() * 90),
+  id: persistentUserId,
+  name: 'Player ' + (persistentUserId % 1000),
   avatar: ''
 };
 

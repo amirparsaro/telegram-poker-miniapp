@@ -126,7 +126,12 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
 
             asyncio.create_task(broadcast_table_state(table))
         else:
-            # If in lobby, ensure player is removed from tables
+            # If entering lobby, sync chips from any table user was at, then remove them from table
+            for tid, tbl in list(game_manager.tables.items()):
+                target_p = next((p for p in tbl.players if p.user_id == self.user_id), None)
+                if target_p:
+                    user_bankrolls[self.user_id] = target_p.chips
+
             affected_old_tables = game_manager.remove_player_from_all_tables(self.user_id)
             for old_tid in affected_old_tables:
                 old_table = game_manager.tables.get(old_tid)
@@ -331,6 +336,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 p = next((player for player in table.players if player.user_id == self.user_id), None)
                 if p:
                     user_bankrolls[self.user_id] = p.chips
+                    logger.info(f"Saved chips for user {self.user_id}: {p.chips}")
         logger.info(f"Client {self.user_id} disconnected from {self.table_id}")
 
 
