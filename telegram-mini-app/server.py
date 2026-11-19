@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 PORT = int(os.environ.get("PORT", 8080))
-ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "admin123")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 ADMIN_IDS = [int(x.strip()) for x in os.environ.get("ADMIN_IDS", "").split(",") if x.strip().isdigit()]
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
