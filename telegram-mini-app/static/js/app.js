@@ -373,7 +373,10 @@ btnAddBot.addEventListener('click', () => {
 btnTables.addEventListener('click', () => { modalRooms.style.display = 'flex'; });
 btnCloseRooms.addEventListener('click', () => { modalRooms.style.display = 'none'; });
 
-btnAdminPanel.addEventListener('click', () => { modalAdmin.style.display = 'flex'; });
+btnAdminPanel.addEventListener('click', () => { 
+  adminPassInput.value = '';
+  modalAdmin.style.display = 'flex'; 
+});
 btnCloseAdmin.addEventListener('click', () => { modalAdmin.style.display = 'none'; });
 
 // Admin Password Form
