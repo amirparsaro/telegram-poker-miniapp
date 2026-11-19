@@ -252,15 +252,39 @@ body {
 .poker-felt {
   width: 100%;
   height: 94%;
-  background: radial-gradient(circle at center, #15803d 0%, #0d532b 65%, #052e16 100%);
-  border: 10px solid #543310;
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8), 0 10px 25px rgba(0, 0, 0, 0.7);
+  /* Luxurious woven baize texture with subtle diamond card-suit watermarks */
+  background: 
+    radial-gradient(circle at center, rgba(34, 197, 94, 0.15) 0%, rgba(5, 46, 22, 0.85) 85%, #021a0d 100%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 2px, transparent 2px, transparent 8px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.08) 0px, rgba(0, 0, 0, 0.08) 2px, transparent 2px, transparent 8px),
+    radial-gradient(ellipse at center, #166534 0%, #0d532b 55%, #052e16 100%);
+  /* Realistic mahogany padded leather bumper rail with golden trim line */
+  border: 11px solid #3d2314;
+  outline: 2px solid rgba(245, 158, 11, 0.35);
+  outline-offset: -6px;
+  box-shadow: 
+    inset 0 0 50px rgba(0, 0, 0, 0.9),
+    inset 0 0 15px rgba(0, 0, 0, 0.8),
+    0 12px 30px rgba(0, 0, 0, 0.85),
+    0 2px 4px rgba(0, 0, 0, 0.5);
   border-radius: 120px;
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
+}
+
+/* Subtle inner casino betting line ring */
+.poker-felt::before {
+  content: "";
+  position: absolute;
+  width: 82%;
+  height: 78%;
+  border-radius: 90px;
+  border: 1px dashed rgba(245, 158, 11, 0.22);
+  pointer-events: none;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
 }
 
 /* Table Center: Pot & Community Cards */
