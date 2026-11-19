@@ -84,7 +84,7 @@ const winHeadline = document.getElementById('win-headline');
 const winPotTag = document.getElementById('win-pot-tag');
 const winDesc = document.getElementById('win-desc');
 const winShowdownHands = document.getElementById('win-showdown-hands');
-const btnWinNextHand = document.getElementById('btn-win-next-hand');
+const winActionsContainer = document.getElementById('win-actions-container');
 
 // Admin & Modal Elements
 const modalRooms = document.getElementById('modal-rooms');
@@ -368,8 +368,39 @@ function showWinnerModal(winInfo) {
     winShowdownHands.style.display = 'none';
   }
 
+  // Populate dynamic action buttons based on player role
+  const isCreatorOrAdmin = isAdmin || (currentGameState && currentGameState.creator_id === currentUser.id);
+
+  if (isCreatorOrAdmin) {
+    winActionsContainer.innerHTML = `
+      <button class="modal-btn secondary-btn" onclick="onWinBackToLobby()" style="flex:1;">Back to Lobby</button>
+      <button class="modal-btn win-btn" onclick="onWinStartNewGame()" style="flex:1.2;">Create New Game</button>
+    `;
+  } else {
+    winActionsContainer.innerHTML = `
+      <button class="modal-btn secondary-btn" onclick="onWinBackToLobby()" style="flex:1;">Back to Lobby</button>
+      <button class="modal-btn win-btn" onclick="onWinStayInGame()" style="flex:1;">Stay in Game</button>
+    `;
+  }
+
   modalWinner.style.display = 'flex';
 }
+
+window.onWinBackToLobby = function() {
+  modalWinner.style.display = 'none';
+  switchTable('lobby');
+};
+
+window.onWinStayInGame = function() {
+  modalWinner.style.display = 'none';
+};
+
+window.onWinStartNewGame = function() {
+  modalWinner.style.display = 'none';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'start_game' }));
+  }
+};
 
 function updateAdminButtonsVisibility() {
   if (isAdmin) {
@@ -563,14 +594,6 @@ btnStartGame.addEventListener('click', () => {
 btnAddBot.addEventListener('click', () => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'add_bot' }));
-  }
-});
-
-// Win Screen Dismiss & Auto Next Hand
-btnWinNextHand.addEventListener('click', () => {
-  modalWinner.style.display = 'none';
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'start_game' }));
   }
 });
 
