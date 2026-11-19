@@ -360,6 +360,18 @@ function showWinnerModal(winInfo) {
   modalWinner.style.display = 'flex';
 }
 
+function updateAdminButtonsVisibility() {
+  if (isAdmin) {
+    // If user is admin, show admin control buttons everywhere (lobby & in-game)
+    if (btnLobbyAdmin) btnLobbyAdmin.style.display = 'inline-block';
+    if (btnAdminPanel) btnAdminPanel.style.display = 'inline-block';
+  } else {
+    // If not admin, only show the Admin login button in the main lobby menu
+    if (btnLobbyAdmin) btnLobbyAdmin.style.display = 'inline-block';
+    if (btnAdminPanel) btnAdminPanel.style.display = 'none';
+  }
+}
+
 function updateActiveView() {
   if (tableId === 'lobby') {
     viewLobby.style.display = 'flex';
@@ -368,6 +380,7 @@ function updateActiveView() {
     viewLobby.style.display = 'none';
     viewGame.style.display = 'flex';
   }
+  updateAdminButtonsVisibility();
 }
 
 function updateLobbyBalance(chips) {
@@ -464,6 +477,7 @@ function setAdminAuthorized(authorized) {
     localStorage.removeItem('poker_admin_token');
     adminToken = '';
   }
+  updateAdminButtonsVisibility();
   // Refresh rooms list so delete buttons reflect admin status
   renderRoomsList(availableTables);
 }
