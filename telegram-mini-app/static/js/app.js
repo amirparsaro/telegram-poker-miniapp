@@ -126,6 +126,9 @@ function connectWebSocket() {
         setAdminAuthorized(false);
       } else if (msg.type === 'room_created') {
         switchTable(msg.table_id);
+      } else if (msg.type === 'kicked') {
+        alert(msg.message || 'You have been kicked from the table.');
+        switchTable('lobby');
       } else if (msg.type === 'error') {
         alert(msg.message);
       }

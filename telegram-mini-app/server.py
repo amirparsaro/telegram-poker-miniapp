@@ -272,6 +272,19 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 if not can_kick:
                     return self.write_message(json.dumps({"type": "error", "message": "Only the room creator or an admin can kick players."}))
                 target_user_id = int(payload.get("user_id"))
+
+                # Notify the kicked player's client connection directly to redirect to lobby
+                room_clients = table_connections.get(self.table_id, set())
+                for client in list(room_clients):
+                    if client.user_id == target_user_id:
+                        try:
+                            client.write_message(json.dumps({
+                                "type": "kicked",
+                                "message": f"You were removed from room '{table.name}' by the creator."
+                            }))
+                        except Exception:
+                            pass
+
                 async with table.lock:
                     game_manager.remove_player(self.table_id, target_user_id)
                     await broadcast_table_state(table)
