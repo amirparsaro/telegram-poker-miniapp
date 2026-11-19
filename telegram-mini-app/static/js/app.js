@@ -48,140 +48,189 @@ let turnTimerInterval = null;
 let previousStage = null;
 let previousCommunityCount = 0;
 let previousInHand = false;
+let previousLastLog = null;
 
-// Sound Effects System (HTML5 Web Audio API - robust audio unlock & synthesis)
+// Sound Effects System (Hybrid Web Audio API + HTML5 Audio + Synth Fallback)
 let audioCtx = null;
+const audioBuffers = {};
+const audioUrls = {
+  card: '/static/audio/card.wav',
+  chips: '/static/audio/chips.wav',
+  fold: '/static/audio/fold.wav',
+  community: '/static/audio/community.wav',
+  win: '/static/audio/win.wav'
+};
+const html5AudioElements = {};
 
-function getAudioContext() {
-  if (!audioCtx) {
+function initAudioSystem() {
+  try {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) {
+    if (AudioContextClass && !audioCtx) {
       audioCtx = new AudioContextClass();
     }
+  } catch (e) {
+    console.warn('AudioContext init error:', e);
+  }
+
+  // Pre-load WAV audio files for both Web Audio API buffers and HTML5 Audio
+  for (const [key, url] of Object.entries(audioUrls)) {
+    try {
+      const a = new Audio(url);
+      a.preload = 'auto';
+      html5AudioElements[key] = a;
+    } catch (e) {}
+
+    if (audioCtx) {
+      fetch(url)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.arrayBuffer();
+        })
+        .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
+        .then(decoded => {
+          audioBuffers[key] = decoded;
+          console.log(`[Audio] Preloaded buffer: ${key}`);
+        })
+        .catch(err => {
+          console.log(`[Audio] Buffer fetch/decode note for ${key}:`, err.message);
+        });
+    }
+  }
+}
+
+// User-gesture audio unlock for Telegram WebViews and mobile browsers
+function resumeAudioContext() {
+  if (!audioCtx) {
+    initAudioSystem();
   }
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    audioCtx.resume().catch(() => {});
   }
-  return audioCtx;
 }
 
-// User-gesture global audio unlock for Telegram WebViews and mobile browsers
-function unlockAudio() {
-  const ctx = getAudioContext();
-  if (ctx && ctx.state === 'suspended') {
-    ctx.resume();
-  }
-  // Play silent oscillator buffer on first tap to prime the mobile audio hardware
-  try {
-    if (ctx) {
-      const buffer = ctx.createBuffer(1, 1, 22050);
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      source.start(0);
-    }
-  } catch (e) {}
-}
-
-['click', 'touchstart', 'pointerdown'].forEach(evt => {
-  document.addEventListener(evt, unlockAudio, { once: true });
+// Keep audio unlocked on all user touches/clicks
+['pointerdown', 'touchstart', 'click'].forEach(evt => {
+  document.addEventListener(evt, resumeAudioContext, { passive: true });
 });
+
+// Initialize audio early
+initAudioSystem();
 
 function playSound(type) {
   try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    
-    // Ensure context is running
-    if (ctx.state === 'suspended') {
-      ctx.resume().then(() => doPlaySound(ctx, type));
-    } else {
-      doPlaySound(ctx, type);
+    resumeAudioContext();
+    console.log(`[Audio] Playing sound: ${type}`);
+
+    // Tier 1: Zero-latency Web Audio API AudioBuffer
+    if (audioCtx && audioBuffers[type]) {
+      const source = audioCtx.createBufferSource();
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0.85;
+      source.buffer = audioBuffers[type];
+      source.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      source.start(0);
+      return;
     }
+
+    // Tier 2: HTML5 Audio clone
+    const audio = html5AudioElements[type];
+    if (audio) {
+      const clone = audio.cloneNode();
+      clone.volume = 0.85;
+      const p = clone.play();
+      if (p !== undefined) {
+        p.catch(() => {
+          // If HTML5 Audio was blocked, fallback to oscillator synth
+          synthesizeSoundFallback(type);
+        });
+        return;
+      }
+    }
+
+    // Tier 3: Realtime Web Audio oscillator synth fallback
+    synthesizeSoundFallback(type);
   } catch (e) {
-    console.warn('Audio playback error:', e);
+    console.warn('playSound error:', e);
+    synthesizeSoundFallback(type);
   }
 }
 
-function doPlaySound(ctx, type) {
+function synthesizeSoundFallback(type) {
   try {
-    const t = ctx.currentTime;
-
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    const t = audioCtx.currentTime;
     if (type === 'card') {
-      // Crisp card deal / slide
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, t);
-      osc.frequency.linearRampToValueAtTime(150, t + 0.12);
+      osc.frequency.setValueAtTime(480, t);
+      osc.frequency.linearRampToValueAtTime(140, t + 0.14);
       gain.gain.setValueAtTime(0.4, t);
-      gain.gain.linearRampToValueAtTime(0.001, t + 0.12);
+      gain.gain.linearRampToValueAtTime(0.001, t + 0.14);
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(audioCtx.destination);
       osc.start(t);
-      osc.stop(t + 0.12);
+      osc.stop(t + 0.14);
     } else if (type === 'chips') {
-      // Crisp metallic chip clatter
-      [2200, 2800].forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+      [2200, 2900].forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
         osc.type = 'sine';
         const startT = t + idx * 0.05;
         osc.frequency.setValueAtTime(freq, startT);
         gain.gain.setValueAtTime(0.35, startT);
         gain.gain.linearRampToValueAtTime(0.001, startT + 0.08);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
         osc.start(startT);
         osc.stop(startT + 0.08);
       });
     } else if (type === 'fold') {
-      // Soft muffled table thump/slide
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(160, t);
-      osc.frequency.linearRampToValueAtTime(50, t + 0.2);
+      osc.frequency.linearRampToValueAtTime(45, t + 0.2);
       gain.gain.setValueAtTime(0.4, t);
       gain.gain.linearRampToValueAtTime(0.001, t + 0.2);
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(audioCtx.destination);
       osc.start(t);
       osc.stop(t + 0.2);
     } else if (type === 'community') {
-      // Major triad chime for Flop/Turn/River
       [523.25, 659.25, 783.99].forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
         osc.type = 'sine';
         const startT = t + idx * 0.06;
         osc.frequency.setValueAtTime(freq, startT);
         gain.gain.setValueAtTime(0.3, startT);
         gain.gain.linearRampToValueAtTime(0.001, startT + 0.3);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
         osc.start(startT);
         osc.stop(startT + 0.3);
       });
     } else if (type === 'win') {
-      // Grand celebratory fanfare
       [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
         osc.type = 'triangle';
         const startT = t + idx * 0.12;
         osc.frequency.setValueAtTime(freq, startT);
         gain.gain.setValueAtTime(0.35, startT);
         gain.gain.linearRampToValueAtTime(0.001, startT + 0.45);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
         osc.start(startT);
         osc.stop(startT + 0.45);
       });
     }
-  } catch (e) {
-    console.warn('Synth error:', e);
-  }
+  } catch (e) {}
 }
 
 // Views
@@ -453,6 +502,10 @@ function renderGameState(state) {
           activeTimerEl.classList.remove('urgent');
         }
       }
+      // If it's my turn and countdown reached 0, auto-fold client-side as safeguard
+      if (remaining <= 0 && state.turn_user_id === currentUser.id && state.in_hand) {
+        sendAction('fold');
+      }
     };
     updateCountdown();
     turnTimerInterval = setInterval(updateCountdown, 500);
@@ -464,6 +517,17 @@ function renderGameState(state) {
     playSound('card'); // Deal starting hands
   } else if (communityCount > previousCommunityCount) {
     playSound('community'); // Flop, Turn, or River deal
+  }
+
+  // Detect actions from any player or bot via state.last_log
+  if (state.last_log && state.last_log !== previousLastLog) {
+    const log = state.last_log.toLowerCase();
+    if (log.includes('folded')) {
+      playSound('fold');
+    } else if (log.includes('called') || log.includes('raised') || log.includes('checked') || log.includes('blind')) {
+      playSound('chips');
+    }
+    previousLastLog = state.last_log;
   }
 
   previousInHand = state.in_hand;

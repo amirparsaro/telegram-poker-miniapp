@@ -92,17 +92,16 @@ async def run_table_turn_loop(table: PokerTable):
                 async with table.lock:
                     game_manager.handle_action(table, current_player.user_id, action)
                     await broadcast_table_state(table)
+                await asyncio.sleep(0.5)
             else:
-                # Human player: check if turn timed out
+                # Human player: check if turn timed out (25 seconds)
                 now = time.time()
                 if table.turn_deadline and now >= table.turn_deadline:
-                    to_call = max(0, table.current_highest_bet - current_player.current_bet)
-                    # If free to check, check; otherwise fold
-                    action = "call" if to_call == 0 else "fold"
                     async with table.lock:
-                        table.last_log = f"⏱️ {current_player.name} ran out of time (25s) and {action}ed."
-                        game_manager.handle_action(table, current_player.user_id, action)
+                        table.last_log = f"⏱️ {current_player.name} ran out of time (25s) and folded."
+                        game_manager.handle_action(table, current_player.user_id, "fold")
                         await broadcast_table_state(table)
+                    await asyncio.sleep(0.5)
                 else:
                     await asyncio.sleep(0.5)
         except Exception as e:
