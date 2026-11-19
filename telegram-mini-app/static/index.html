@@ -96,7 +96,14 @@
     <!-- MODAL: Rooms / Tables Switcher -->
     <div class="modal-overlay" id="modal-rooms" style="display: none;">
       <div class="modal-card">
-        <div class="modal-title">🎲 Select Room</div>
+        <div class="modal-title">🎲 Poker Rooms & Live Games</div>
+        
+        <!-- Player Create Room Row -->
+        <div class="create-room-box">
+          <input type="text" id="player-new-room-name" class="admin-input" placeholder="New room name (e.g. Friendly Game)">
+          <button class="modal-btn" id="btn-player-create-room" style="white-space: nowrap; width: auto; padding: 9px 14px;">+ Create</button>
+        </div>
+
         <div class="rooms-list" id="rooms-list-container">
           <!-- Populated by JS -->
         </div>
@@ -139,6 +146,10 @@
             <div id="admin-players-list" class="admin-players-list">
               <!-- Rendered by JS -->
             </div>
+          </div>
+
+          <div style="margin-top: 14px;">
+            <button class="modal-btn danger-btn" id="btn-admin-logout" style="background: #dc2626; color: #fff;">Log Out from Admin</button>
           </div>
         </div>
 

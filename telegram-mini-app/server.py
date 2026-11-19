@@ -98,6 +98,13 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
             table_connections[self.table_id] = set()
         table_connections[self.table_id].add(self)
 
+        # Ensure user is removed from any previous table they were at
+        affected_old_tables = game_manager.remove_player_from_all_tables(self.user_id, except_table_id=self.table_id)
+        for old_tid in affected_old_tables:
+            old_table = game_manager.tables.get(old_tid)
+            if old_table:
+                asyncio.create_task(broadcast_table_state(old_table))
+
         table = game_manager.get_or_create_table(self.table_id)
         try:
             game_manager.add_player(
@@ -115,6 +122,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
         self.write_message(json.dumps({
             "type": "init",
             "is_admin": self.is_admin,
+            "user_id": self.user_id,
             "tables": game_manager.list_tables()
         }))
 
@@ -158,14 +166,45 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 except Exception as e:
                     self.write_message(json.dumps({"type": "error", "message": str(e)}))
 
+            # --- ROOM MANAGEMENT ---
+            elif msg_type == "create_room":
+                room_name = payload.get("name", "").strip()
+                if not room_name:
+                    return self.write_message(json.dumps({"type": "error", "message": "Room name cannot be empty."}))
+                new_table_id = f"room_{random.randint(100, 9999)}"
+                game_manager.create_table(new_table_id, name=room_name, creator_id=self.user_id)
+                await broadcast_all_tables()
+                self.write_message(json.dumps({"type": "room_created", "table_id": new_table_id}))
+
+            elif msg_type == "delete_room":
+                del_id = payload.get("table_id")
+                target_table = game_manager.tables.get(del_id)
+                if not target_table:
+                    return self.write_message(json.dumps({"type": "error", "message": "Room not found."}))
+                
+                # Check permission: Only creator or admin can delete
+                can_delete = self.is_admin or (target_table.creator_id is not None and target_table.creator_id == self.user_id)
+                if not can_delete:
+                    return self.write_message(json.dumps({"type": "error", "message": "Only the room creator or an admin can delete this room."}))
+                
+                if del_id == self.table_id:
+                    return self.write_message(json.dumps({"type": "error", "message": "Cannot delete active table while connected to it."}))
+
+                game_manager.delete_table(del_id)
+                await broadcast_all_tables()
+
             # --- ADMIN COMMANDS ---
             elif msg_type == "admin_auth":
                 token = payload.get("token")
-                if token == ADMIN_SECRET:
+                if token and ADMIN_SECRET and token == ADMIN_SECRET:
                     self.is_admin = True
                     self.write_message(json.dumps({"type": "admin_auth_success"}))
                 else:
                     self.write_message(json.dumps({"type": "error", "message": "Invalid Admin Password"}))
+
+            elif msg_type == "admin_logout":
+                self.is_admin = False
+                self.write_message(json.dumps({"type": "admin_logout_success"}))
 
             elif msg_type == "admin_create_table":
                 if not self.is_admin:

@@ -103,6 +103,10 @@ function connectWebSocket() {
         renderRoomsList(msg.tables);
       } else if (msg.type === 'admin_auth_success') {
         setAdminAuthorized(true);
+      } else if (msg.type === 'admin_logout_success') {
+        setAdminAuthorized(false);
+      } else if (msg.type === 'room_created') {
+        switchTable(msg.table_id);
       } else if (msg.type === 'error') {
         alert(msg.message);
       }
@@ -296,19 +300,49 @@ function showWinnerModal(winInfo) {
 function renderRoomsList(tables) {
   availableTables = tables || [];
   roomsListContainer.innerHTML = '';
+  
+  if (availableTables.length === 0) {
+    roomsListContainer.innerHTML = '<div style="color:var(--text-muted); font-size:12px; text-align:center; padding:10px;">No rooms found.</div>';
+    return;
+  }
+
   availableTables.forEach(t => {
     const item = document.createElement('div');
     item.className = 'room-item';
     const isCurrent = t.table_id === tableId;
+    const canDelete = isAdmin || (t.creator_id && t.creator_id === currentUser.id);
+
+    // Build player profiles preview under room name
+    let playersHtml = '';
+    if (t.players && t.players.length > 0) {
+      const tags = t.players.map(p => {
+        const avatar = p.avatar 
+          ? `<img src="${p.avatar}" alt="${p.name}"/>` 
+          : (p.is_bot ? '🤖' : '👤');
+        return `
+          <div class="room-player-tag">
+            <span class="room-player-avatar-small">${avatar}</span>
+            <span>${p.name}</span>
+          </div>
+        `;
+      }).join('');
+      playersHtml = `<div class="room-players-preview">${tags}</div>`;
+    } else {
+      playersHtml = `<div class="room-players-preview" style="color:var(--text-muted); font-size:11px;">No players yet (Table empty)</div>`;
+    }
+
     item.innerHTML = `
-      <div class="room-info">
-        <div class="room-name">${t.name} ${isCurrent ? '<span style="color:var(--gold); font-size:11px;">(Current)</span>' : ''}</div>
-        <div class="room-sub">${t.player_count} players • ${t.stage} • Pot: ${t.pot}</div>
+      <div class="room-header">
+        <div class="room-info">
+          <div class="room-name">${t.name} ${isCurrent ? '<span style="color:var(--gold); font-size:11px;">(Current)</span>' : ''}</div>
+          <div class="room-sub">${t.player_count}/6 players • Stage: ${t.stage} • Pot: ${t.pot}🪙</div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          ${!isCurrent ? `<button class="room-action-btn" onclick="switchTable('${t.table_id}')">Join</button>` : ''}
+          ${canDelete && !isCurrent ? `<button class="room-action-btn danger" onclick="deleteTable('${t.table_id}')">Delete</button>` : ''}
+        </div>
       </div>
-      <div style="display:flex; gap:6px;">
-        ${!isCurrent ? `<button class="room-action-btn" onclick="switchTable('${t.table_id}')">Join</button>` : ''}
-        ${isAdmin && !isCurrent ? `<button class="room-action-btn danger" onclick="deleteTable('${t.table_id}')">Delete</button>` : ''}
-      </div>
+      ${playersHtml}
     `;
     roomsListContainer.appendChild(item);
   });
@@ -323,7 +357,7 @@ window.switchTable = function(newTableId) {
 
 window.deleteTable = function(delTableId) {
   if (confirm(`Delete table ${delTableId}?`)) {
-    ws.send(JSON.stringify({ type: 'admin_delete_table', table_id: delTableId }));
+    ws.send(JSON.stringify({ type: 'delete_room', table_id: delTableId }));
   }
 };
 
@@ -338,7 +372,13 @@ function setAdminAuthorized(authorized) {
   } else {
     adminLoginBox.style.display = 'block';
     adminActionsBox.style.display = 'none';
+    btnAdminPanel.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+    btnAdminPanel.style.color = '#fff';
+    localStorage.removeItem('poker_admin_token');
+    adminToken = '';
   }
+  // Refresh rooms list so delete buttons reflect admin status
+  renderRoomsList(availableTables);
 }
 
 function renderAdminPlayers(players) {
@@ -415,6 +455,29 @@ btnWinNextHand.addEventListener('click', () => {
   modalWinner.style.display = 'none';
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'start_game' }));
+  }
+});
+
+// Room Creation & Admin Logout Elements
+const playerNewRoomName = document.getElementById('player-new-room-name');
+const btnPlayerCreateRoom = document.getElementById('btn-player-create-room');
+const btnAdminLogout = document.getElementById('btn-admin-logout');
+
+// Player Create Room Listener
+btnPlayerCreateRoom.addEventListener('click', () => {
+  const name = playerNewRoomName.value.trim();
+  if (name) {
+    ws.send(JSON.stringify({ type: 'create_room', name: name }));
+    playerNewRoomName.value = '';
+  }
+});
+
+// Admin Logout Listener
+btnAdminLogout.addEventListener('click', () => {
+  if (confirm('Log out from administrator role?')) {
+    ws.send(JSON.stringify({ type: 'admin_logout' }));
+    setAdminAuthorized(false);
+    modalAdmin.style.display = 'none';
   }
 });
 

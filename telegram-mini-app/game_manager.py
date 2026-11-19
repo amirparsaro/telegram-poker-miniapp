@@ -42,6 +42,7 @@ class Player:
 class PokerTable:
     table_id: str
     name: str = "Main Room"
+    creator_id: Optional[int] = None
     players: List[Player] = field(default_factory=list)
     in_hand: bool = False
     stage: str = "WAITING"  # WAITING, PREFLOP, FLOP, TURN, RIVER, SHOWDOWN
@@ -76,6 +77,7 @@ class PokerTable:
         return {
             "table_id": self.table_id,
             "name": self.name,
+            "creator_id": self.creator_id,
             "in_hand": self.in_hand,
             "stage": self.stage,
             "pot": self.pot,
@@ -100,10 +102,10 @@ class GameManager:
         # Create default table
         self.create_table("main_room", "Standard Table")
 
-    def create_table(self, table_id: str, name: str = "") -> PokerTable:
+    def create_table(self, table_id: str, name: str = "", creator_id: Optional[int] = None) -> PokerTable:
         if not name:
             name = f"Table {table_id}"
-        table = PokerTable(table_id=table_id, name=name)
+        table = PokerTable(table_id=table_id, name=name, creator_id=creator_id)
         self.tables[table_id] = table
         return table
 
@@ -118,13 +120,35 @@ class GameManager:
             {
                 "table_id": t.table_id,
                 "name": t.name,
+                "creator_id": t.creator_id,
                 "player_count": len(t.players),
                 "in_hand": t.in_hand,
                 "stage": t.stage,
-                "pot": t.pot
+                "pot": t.pot,
+                "players": [
+                    {
+                        "user_id": p.user_id,
+                        "name": p.name,
+                        "avatar": p.avatar,
+                        "chips": p.chips,
+                        "is_bot": p.is_bot
+                    }
+                    for p in t.players
+                ]
             }
             for t in self.tables.values()
         ]
+
+    def remove_player_from_all_tables(self, user_id: int, except_table_id: Optional[str] = None) -> List[str]:
+        """Removes a user from all tables (except optionally one) and returns affected table IDs."""
+        affected = []
+        for tid, table in list(self.tables.items()):
+            if except_table_id and tid == except_table_id:
+                continue
+            if any(p.user_id == user_id for p in table.players):
+                self.remove_player(tid, user_id)
+                affected.append(tid)
+        return affected
 
     def get_or_create_table(self, table_id: str) -> PokerTable:
         if table_id not in self.tables:
