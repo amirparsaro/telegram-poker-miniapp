@@ -49,88 +49,138 @@ let previousStage = null;
 let previousCommunityCount = 0;
 let previousInHand = false;
 
-// Sound Effects System (HTML5 Web Audio API - zero dependencies, crystal clear synthetic sound)
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+// Sound Effects System (HTML5 Web Audio API - robust audio unlock & synthesis)
+let audioCtx = null;
+
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioCtx = new AudioContextClass();
+    }
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+// User-gesture global audio unlock for Telegram WebViews and mobile browsers
+function unlockAudio() {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume();
+  }
+  // Play silent oscillator buffer on first tap to prime the mobile audio hardware
+  try {
+    if (ctx) {
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start(0);
+    }
+  } catch (e) {}
+}
+
+['click', 'touchstart', 'pointerdown'].forEach(evt => {
+  document.addEventListener(evt, unlockAudio, { once: true });
+});
 
 function playSound(type) {
   try {
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    const t = audioCtx.currentTime;
-
-    if (type === 'card') {
-      // Crisp card flick/deal sound
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(320, t);
-      osc.frequency.exponentialRampToValueAtTime(80, t + 0.08);
-      gain.gain.setValueAtTime(0.3, t);
-      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(t);
-      osc.stop(t + 0.08);
-    } else if (type === 'chips') {
-      // Metallic casino chip clack sound (Call & Raise)
-      for (let i = 0; i < 2; i++) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        const startFreq = i === 0 ? 1800 : 2400;
-        osc.frequency.setValueAtTime(startFreq, t + i * 0.04);
-        gain.gain.setValueAtTime(0.25, t + i * 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.01, t + i * 0.04 + 0.06);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(t + i * 0.04);
-        osc.stop(t + i * 0.04 + 0.06);
-      }
-    } else if (type === 'fold') {
-      // Soft woosh/thud when folding cards
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(140, t);
-      osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-      gain.gain.setValueAtTime(0.3, t);
-      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(t);
-      osc.stop(t + 0.15);
-    } else if (type === 'community') {
-      // Dramatic chord when Flop/Turn/River hits the board
-      [440, 554, 659].forEach((freq, idx) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, t + idx * 0.03);
-        gain.gain.setValueAtTime(0.2, t + idx * 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.01, t + idx * 0.03 + 0.25);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(t + idx * 0.03);
-        osc.stop(t + idx * 0.03 + 0.25);
-      });
-    } else if (type === 'win') {
-      // Victorious fanfare chime for winning pot
-      [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, t + idx * 0.1);
-        gain.gain.setValueAtTime(0.3, t + idx * 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.01, t + idx * 0.1 + 0.4);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(t + idx * 0.1);
-        osc.stop(t + idx * 0.1 + 0.4);
-      });
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    // Ensure context is running
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(() => doPlaySound(ctx, type));
+    } else {
+      doPlaySound(ctx, type);
     }
   } catch (e) {
     console.warn('Audio playback error:', e);
+  }
+}
+
+function doPlaySound(ctx, type) {
+  try {
+    const t = ctx.currentTime;
+
+    if (type === 'card') {
+      // Crisp card deal / slide
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, t);
+      osc.frequency.linearRampToValueAtTime(150, t + 0.12);
+      gain.gain.setValueAtTime(0.4, t);
+      gain.gain.linearRampToValueAtTime(0.001, t + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.12);
+    } else if (type === 'chips') {
+      // Crisp metallic chip clatter
+      [2200, 2800].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const startT = t + idx * 0.05;
+        osc.frequency.setValueAtTime(freq, startT);
+        gain.gain.setValueAtTime(0.35, startT);
+        gain.gain.linearRampToValueAtTime(0.001, startT + 0.08);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startT);
+        osc.stop(startT + 0.08);
+      });
+    } else if (type === 'fold') {
+      // Soft muffled table thump/slide
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(160, t);
+      osc.frequency.linearRampToValueAtTime(50, t + 0.2);
+      gain.gain.setValueAtTime(0.4, t);
+      gain.gain.linearRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    } else if (type === 'community') {
+      // Major triad chime for Flop/Turn/River
+      [523.25, 659.25, 783.99].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const startT = t + idx * 0.06;
+        osc.frequency.setValueAtTime(freq, startT);
+        gain.gain.setValueAtTime(0.3, startT);
+        gain.gain.linearRampToValueAtTime(0.001, startT + 0.3);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startT);
+        osc.stop(startT + 0.3);
+      });
+    } else if (type === 'win') {
+      // Grand celebratory fanfare
+      [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        const startT = t + idx * 0.12;
+        osc.frequency.setValueAtTime(freq, startT);
+        gain.gain.setValueAtTime(0.35, startT);
+        gain.gain.linearRampToValueAtTime(0.001, startT + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startT);
+        osc.stop(startT + 0.45);
+      });
+    }
+  } catch (e) {
+    console.warn('Synth error:', e);
   }
 }
 

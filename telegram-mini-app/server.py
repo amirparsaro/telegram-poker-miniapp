@@ -47,47 +47,67 @@ async def broadcast_all_tables():
             except Exception:
                 pass
 
-async def check_bot_turn(table: PokerTable):
-    """If the current turn belongs to a bot or if a player times out (25s), auto-act."""
+# Active table loop tasks: table_id -> asyncio.Task
+table_loop_tasks: Dict[str, asyncio.Task] = {}
+
+def ensure_table_loop(table: PokerTable):
+    """Ensures there is a running background loop monitoring bots and turn timeouts for this table."""
+    tid = table.table_id
+    existing_task = table_loop_tasks.get(tid)
+    if existing_task and not existing_task.done():
+        return
+    table_loop_tasks[tid] = asyncio.create_task(run_table_turn_loop(table))
+
+async def run_table_turn_loop(table: PokerTable):
+    """Monitors turns for bots and auto-folds when a player exceeds 25 seconds."""
     import time
     while table.in_hand:
-        current_player = table.players[table.turn_idx]
-        
-        if current_player.is_bot:
-            await asyncio.sleep(1.2)
-            to_call = max(0, table.current_highest_bet - current_player.current_bet)
+        try:
+            if not table.players:
+                break
+            current_player = table.players[table.turn_idx]
             
-            if to_call == 0:
-                action = "call"
-            elif to_call <= current_player.chips * 0.2:
-                dice = random.random()
-                if dice < 0.75:
-                    action = "call"
-                elif dice < 0.9 and current_player.chips >= to_call + 20:
-                    action = "raise"
-                else:
-                    action = "fold"
-            else:
-                dice = random.random()
-                action = "call" if dice < 0.4 else "fold"
-
-            async with table.lock:
-                game_manager.handle_action(table, current_player.user_id, action)
-                await broadcast_table_state(table)
-        else:
-            # Human player's turn: check if 25s deadline exceeded
-            now = time.time()
-            if table.turn_deadline and now >= table.turn_deadline:
-                # Player timed out: Auto-fold (or check if to_call == 0)
+            if current_player.is_bot:
+                await asyncio.sleep(1.2)
+                if not table.in_hand:
+                    break
+                # Re-fetch current player after sleep
+                current_player = table.players[table.turn_idx]
                 to_call = max(0, table.current_highest_bet - current_player.current_bet)
-                action = "call" if to_call == 0 else "fold"
+                
+                if to_call == 0:
+                    action = "call"
+                elif to_call <= current_player.chips * 0.2:
+                    dice = random.random()
+                    if dice < 0.75:
+                        action = "call"
+                    elif dice < 0.9 and current_player.chips >= to_call + 20:
+                        action = "raise"
+                    else:
+                        action = "fold"
+                else:
+                    dice = random.random()
+                    action = "call" if dice < 0.4 else "fold"
+
                 async with table.lock:
-                    table.last_log = f"{current_player.name} timed out (25s) and {action}ed."
                     game_manager.handle_action(table, current_player.user_id, action)
                     await broadcast_table_state(table)
             else:
-                # Sleep briefly and recheck
-                await asyncio.sleep(0.5)
+                # Human player: check if turn timed out
+                now = time.time()
+                if table.turn_deadline and now >= table.turn_deadline:
+                    to_call = max(0, table.current_highest_bet - current_player.current_bet)
+                    # If free to check, check; otherwise fold
+                    action = "call" if to_call == 0 else "fold"
+                    async with table.lock:
+                        table.last_log = f"⏱️ {current_player.name} ran out of time (25s) and {action}ed."
+                        game_manager.handle_action(table, current_player.user_id, action)
+                        await broadcast_table_state(table)
+                else:
+                    await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.error("Error in table turn loop for %s: %s", table.table_id, e)
+            await asyncio.sleep(1)
 
 
 class IndexHandler(tornado.web.RequestHandler):
@@ -201,7 +221,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                                 "message": table.last_log or "Cannot start game yet (need at least 2 players)."
                             }))
                         await broadcast_table_state(table)
-                asyncio.create_task(check_bot_turn(table))
+                ensure_table_loop(table)
 
             elif msg_type == "action":
                 action = payload.get("action")
@@ -211,7 +231,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                     if err:
                         self.write_message(json.dumps({"type": "error", "message": err}))
                     await broadcast_table_state(table)
-                asyncio.create_task(check_bot_turn(table))
+                ensure_table_loop(table)
 
             elif msg_type == "add_bot":
                 if not table:
@@ -350,7 +370,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 async with table.lock:
                     game_manager.start_hand(table)
                     await broadcast_table_state(table)
-                asyncio.create_task(check_bot_turn(table))
+                ensure_table_loop(table)
 
         except Exception as e:
             logger.error("Error processing websocket message: %s", e)
