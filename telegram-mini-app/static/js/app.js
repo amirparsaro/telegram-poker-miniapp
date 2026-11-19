@@ -32,6 +32,7 @@ let currentGameState = null;
 let reconnectTimer = null;
 let isAdmin = false;
 let availableTables = [];
+let lastShownWinnerId = null;
 
 // UI Elements
 const tableDisplayNameEl = document.getElementById('table-display-name');
@@ -51,6 +52,14 @@ const raiseSlider = document.getElementById('raise-slider');
 const raiseAmountVal = document.getElementById('raise-amount-val');
 const btnStartGame = document.getElementById('btn-start-game');
 const btnAddBot = document.getElementById('btn-add-bot');
+
+// Winner Modal Elements
+const modalWinner = document.getElementById('modal-winner');
+const winHeadline = document.getElementById('win-headline');
+const winPotTag = document.getElementById('win-pot-tag');
+const winDesc = document.getElementById('win-desc');
+const winShowdownHands = document.getElementById('win-showdown-hands');
+const btnWinNextHand = document.getElementById('btn-win-next-hand');
 
 // Admin & Modal Elements
 const modalRooms = document.getElementById('modal-rooms');
@@ -247,9 +256,41 @@ function renderGameState(state) {
       : `Deal New Hand (${players.length} Players)`;
   }
 
+  // Check for winner celebration screen
+  if (state.winner_info) {
+    const winnerKey = JSON.stringify(state.winner_info);
+    if (lastShownWinnerId !== winnerKey) {
+      lastShownWinnerId = winnerKey;
+      showWinnerModal(state.winner_info);
+    }
+  } else {
+    modalWinner.style.display = 'none';
+  }
+
   if (isAdmin) {
     renderAdminPlayers(players);
   }
+}
+
+function showWinnerModal(winInfo) {
+  const winnerNames = winInfo.winners ? winInfo.winners.join(', ') : 'Player';
+  winHeadline.innerText = `🏆 ${winnerNames} WON!`;
+  winPotTag.innerText = `+${winInfo.pot} 🪙 POT`;
+  winDesc.innerText = winInfo.description || 'Won the pot!';
+
+  if (winInfo.type === 'showdown' && winInfo.hands && winInfo.hands.length > 0) {
+    winShowdownHands.style.display = 'flex';
+    winShowdownHands.innerHTML = winInfo.hands.map(h => `
+      <div class="win-hand-item">
+        <span style="font-weight:700;">${h.name}</span>
+        <span style="color:var(--gold);">${h.desc}</span>
+      </div>
+    `).join('');
+  } else {
+    winShowdownHands.style.display = 'none';
+  }
+
+  modalWinner.style.display = 'flex';
 }
 
 function renderRoomsList(tables) {
@@ -366,6 +407,14 @@ btnStartGame.addEventListener('click', () => {
 btnAddBot.addEventListener('click', () => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'add_bot' }));
+  }
+});
+
+// Win Screen Dismiss & Auto Next Hand
+btnWinNextHand.addEventListener('click', () => {
+  modalWinner.style.display = 'none';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'start_game' }));
   }
 });
 
