@@ -69,7 +69,7 @@
       <!-- Table Canvas Area -->
       <main class="table-container">
         <div class="poker-felt">
-          <!-- Center: Pot & Community Cards -->
+          <!-- Center: Pot & Community Cards & Global Turn Timer -->
           <div class="table-center">
             <div class="pot-badge">
               <span class="pot-label">POT</span>
@@ -78,6 +78,15 @@
             </div>
             <div class="community-cards" id="community-cards">
               <!-- Rendered by JS -->
+            </div>
+            <!-- Global Table Turn Timer Visible to Everyone -->
+            <div class="table-turn-timer-pill" id="table-turn-timer" style="display: none;">
+              <span class="turn-timer-pulse-dot"></span>
+              <span class="turn-timer-label" id="table-turn-label">Turn</span>
+              <span class="turn-timer-secs" id="table-turn-secs">25s</span>
+              <div class="turn-timer-bar-track">
+                <div class="turn-timer-bar-fill" id="table-turn-bar-fill"></div>
+              </div>
             </div>
           </div>
 
@@ -97,6 +106,10 @@
       <footer class="action-panel">
         <!-- In-Game Betting Actions -->
         <div id="controls-playing" style="display: none; flex-direction: column; gap: 8px;">
+          <!-- Action Panel Turn Status Notice -->
+          <div class="action-turn-notice" id="action-turn-notice" style="display: none;">
+            <span id="action-turn-text">⏱️ Your turn (25s)</span>
+          </div>
           <div class="raise-slider-box">
             <span style="font-size: 11px; font-weight: 700; color: #9ca3af;">RAISE</span>
             <input type="range" id="raise-slider" class="raise-slider" min="20" max="200" step="20" value="20">

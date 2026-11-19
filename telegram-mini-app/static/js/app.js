@@ -419,7 +419,7 @@ function renderGameState(state) {
   for (let i = 0; i < numPlayers; i++) {
     const relPos = (i - userIdx + 6) % 6;
     const player = players[i];
-    const isTurn = state.in_hand && (i === state.turn_idx);
+    const isTurn = state.in_hand && (player.user_id === state.turn_user_id || i === state.turn_idx);
     const isDealer = state.in_hand && (i === state.dealer_idx);
     const isNewJoin = !previousPlayerIds.has(player.user_id);
 
@@ -483,16 +483,33 @@ function renderGameState(state) {
 
   previousPlayerIds = currentIds;
 
-  // Update 25s Countdown Timer on active turn seat
+  // Update 25s Countdown Timer visible to EVERYONE
   if (turnTimerInterval) {
     clearInterval(turnTimerInterval);
     turnTimerInterval = null;
   }
 
+  const tableTurnTimerEl = document.getElementById('table-turn-timer');
+  const tableTurnLabelEl = document.getElementById('table-turn-label');
+  const tableTurnSecsEl = document.getElementById('table-turn-secs');
+  const tableTurnBarFillEl = document.getElementById('table-turn-bar-fill');
+  const actionTurnNoticeEl = document.getElementById('action-turn-notice');
+  const actionTurnTextEl = document.getElementById('action-turn-text');
+
+  const activeTurnPlayer = state.players.find(p => p.user_id === state.turn_user_id) || state.players[state.turn_idx];
+  const activeTurnName = activeTurnPlayer ? activeTurnPlayer.name : 'Player';
+  const isMyTurn = state.in_hand && (state.turn_user_id === currentUser.id);
+
   if (state.in_hand && state.turn_deadline) {
+    if (tableTurnTimerEl) tableTurnTimerEl.style.display = 'flex';
+    if (actionTurnNoticeEl) actionTurnNoticeEl.style.display = 'block';
+
     const updateCountdown = () => {
       const now = Date.now() / 1000;
       const remaining = Math.max(0, Math.ceil(state.turn_deadline - now));
+      const pct = Math.max(0, Math.min(100, (remaining / 25.0) * 100));
+
+      // 1. Update Seat Badge on Active Player's avatar
       const activeTimerEl = document.getElementById(`seat-timer-${state.turn_user_id}`);
       if (activeTimerEl) {
         activeTimerEl.innerText = `${remaining}s`;
@@ -502,13 +519,48 @@ function renderGameState(state) {
           activeTimerEl.classList.remove('urgent');
         }
       }
+
+      // 2. Update Global Center Table Timer (Visible to everyone)
+      if (tableTurnSecsEl) {
+        tableTurnSecsEl.innerText = `${remaining}s`;
+      }
+      if (tableTurnLabelEl) {
+        tableTurnLabelEl.innerText = isMyTurn ? 'YOUR TURN' : `${activeTurnName}'s turn`;
+      }
+      if (tableTurnBarFillEl) {
+        tableTurnBarFillEl.style.width = `${pct}%`;
+      }
+      if (tableTurnTimerEl) {
+        if (remaining <= 5) {
+          tableTurnTimerEl.classList.add('urgent');
+        } else {
+          tableTurnTimerEl.classList.remove('urgent');
+        }
+      }
+
+      // 3. Update Action Panel Notice
+      if (actionTurnTextEl) {
+        if (isMyTurn) {
+          if (remaining <= 5) {
+            actionTurnTextEl.innerHTML = `⏱️ <b style="color:#ef4444;">HURRY!</b> <span style="color:#f87171;">${remaining}s remaining</span>`;
+          } else {
+            actionTurnTextEl.innerHTML = `⏱️ <b style="color:var(--gold);">YOUR TURN</b> — <b>${remaining}s</b> to act`;
+          }
+        } else {
+          actionTurnTextEl.innerHTML = `⏳ Waiting for <b>${activeTurnName}</b> (${remaining}s)...`;
+        }
+      }
+
       // If it's my turn and countdown reached 0, auto-fold client-side as safeguard
-      if (remaining <= 0 && state.turn_user_id === currentUser.id && state.in_hand) {
+      if (remaining <= 0 && isMyTurn && state.in_hand) {
         sendAction('fold');
       }
     };
     updateCountdown();
     turnTimerInterval = setInterval(updateCountdown, 500);
+  } else {
+    if (tableTurnTimerEl) tableTurnTimerEl.style.display = 'none';
+    if (actionTurnNoticeEl) actionTurnNoticeEl.style.display = 'none';
   }
 
   // Audio Triggers based on State Changes
@@ -535,8 +587,6 @@ function renderGameState(state) {
   previousStage = state.stage;
 
   // Action Panel Controls
-  const isMyTurn = state.in_hand && (state.turn_user_id === currentUser.id);
-
   if (state.in_hand) {
     controlsPlayingEl.style.display = 'flex';
     controlsWaitingEl.style.display = 'none';
