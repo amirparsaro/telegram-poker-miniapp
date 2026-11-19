@@ -137,9 +137,22 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
 
             # Player Actions
             if msg_type == "start_game":
+                # Check permission: Only table creator or admin can start the game
+                can_start = self.is_admin or (table.creator_id is not None and table.creator_id == self.user_id) or (table.creator_id is None and self.is_admin)
+                if not can_start:
+                    return self.write_message(json.dumps({
+                        "type": "error", 
+                        "message": "Only the room creator or an admin can start the game."
+                    }))
+
                 async with table.lock:
                     if not table.in_hand:
-                        game_manager.start_hand(table)
+                        started = game_manager.start_hand(table)
+                        if not started:
+                            self.write_message(json.dumps({
+                                "type": "error",
+                                "message": table.last_log or "Cannot start game yet (need at least 2 players)."
+                            }))
                         await broadcast_table_state(table)
                 asyncio.create_task(check_bot_turn(table))
 

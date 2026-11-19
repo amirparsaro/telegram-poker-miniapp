@@ -254,10 +254,17 @@ function renderGameState(state) {
     controlsPlayingEl.style.display = 'none';
     controlsWaitingEl.style.display = 'block';
 
-    btnStartGame.disabled = players.length < 2;
-    btnStartGame.innerText = players.length < 2 
-      ? `Waiting for players (${players.length}/2 min)...` 
-      : `Deal New Hand (${players.length} Players)`;
+    const canStart = isAdmin || (state.creator_id && state.creator_id === currentUser.id);
+
+    if (!canStart) {
+      btnStartGame.disabled = true;
+      btnStartGame.innerText = `Waiting for creator to start... (${players.length} Players)`;
+    } else {
+      btnStartGame.disabled = players.length < 2;
+      btnStartGame.innerText = players.length < 2 
+        ? `Waiting for players (${players.length}/2 min)...` 
+        : `Deal New Hand (${players.length} Players)`;
+    }
   }
 
   // Check for winner celebration screen
