@@ -52,12 +52,14 @@
     <div id="view-game" class="view-screen" style="display: none;">
       <!-- Top Bar -->
       <header class="top-bar">
-        <div class="table-title">
-          <span class="title-text" id="table-display-name">♠ TEXAS HOLD'EM</span>
-          <span class="status-badge" id="stage-badge">WAITING</span>
+        <div class="table-title" style="flex-direction: row; align-items: center; gap: 8px;">
+          <button class="icon-btn back-arrow-btn" id="btn-back-lobby" title="Back to Lobby">‹</button>
+          <div style="display: flex; flex-direction: column; overflow: hidden;">
+            <span class="title-text" id="table-display-name">♠ TEXAS HOLD'EM</span>
+            <span class="status-badge" id="stage-badge">WAITING</span>
+          </div>
         </div>
         <div class="top-actions">
-          <button class="icon-btn" id="btn-back-lobby">🚪 Lobby</button>
           <button class="icon-btn" id="btn-tables">🎲 Rooms</button>
           <button class="icon-btn" id="btn-add-bot">+ Bot</button>
           <button class="icon-btn admin-toggle-btn" id="btn-admin-panel">⚙️ Admin</button>

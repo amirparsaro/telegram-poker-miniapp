@@ -169,10 +169,31 @@ body {
   z-index: 10;
 }
 
+.back-arrow-btn {
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 50%;
+  font-weight: 900;
+  color: var(--gold);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-arrow-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+  transform: scale(1.08);
+}
+
 .table-title {
   display: flex;
   flex-direction: column;
-  max-width: 45%;
+  max-width: 55%;
 }
 
 .title-text {
