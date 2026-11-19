@@ -44,6 +44,95 @@ let isAdmin = false;
 let availableTables = [];
 let lastShownWinnerId = null;
 let previousPlayerIds = new Set();
+let turnTimerInterval = null;
+let previousStage = null;
+let previousCommunityCount = 0;
+let previousInHand = false;
+
+// Sound Effects System (HTML5 Web Audio API - zero dependencies, crystal clear synthetic sound)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(type) {
+  try {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    const t = audioCtx.currentTime;
+
+    if (type === 'card') {
+      // Crisp card flick/deal sound
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(320, t);
+      osc.frequency.exponentialRampToValueAtTime(80, t + 0.08);
+      gain.gain.setValueAtTime(0.3, t);
+      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.08);
+    } else if (type === 'chips') {
+      // Metallic casino chip clack sound (Call & Raise)
+      for (let i = 0; i < 2; i++) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        const startFreq = i === 0 ? 1800 : 2400;
+        osc.frequency.setValueAtTime(startFreq, t + i * 0.04);
+        gain.gain.setValueAtTime(0.25, t + i * 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + i * 0.04 + 0.06);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t + i * 0.04);
+        osc.stop(t + i * 0.04 + 0.06);
+      }
+    } else if (type === 'fold') {
+      // Soft woosh/thud when folding cards
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(140, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+      gain.gain.setValueAtTime(0.3, t);
+      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.15);
+    } else if (type === 'community') {
+      // Dramatic chord when Flop/Turn/River hits the board
+      [440, 554, 659].forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t + idx * 0.03);
+        gain.gain.setValueAtTime(0.2, t + idx * 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + idx * 0.03 + 0.25);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t + idx * 0.03);
+        osc.stop(t + idx * 0.03 + 0.25);
+      });
+    } else if (type === 'win') {
+      // Victorious fanfare chime for winning pot
+      [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t + idx * 0.1);
+        gain.gain.setValueAtTime(0.3, t + idx * 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + idx * 0.1 + 0.4);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t + idx * 0.1);
+        osc.stop(t + idx * 0.1 + 0.4);
+      });
+    }
+  } catch (e) {
+    console.warn('Audio playback error:', e);
+  }
+}
 
 // Views
 const viewLobby = document.getElementById('view-lobby');
@@ -139,6 +228,9 @@ function connectWebSocket() {
         switchTable('lobby');
       } else if (msg.type === 'room_deleted') {
         alert(msg.message || 'This room was deleted. Returning to lobby.');
+        switchTable('lobby');
+      } else if (msg.type === 'error_redirect_lobby') {
+        alert(msg.message || 'Cannot join room.');
         switchTable('lobby');
       } else if (msg.type === 'error') {
         alert(msg.message);
@@ -267,12 +359,15 @@ function renderGameState(state) {
       ? `<img src="${player.avatar}" alt="${player.name}"/>` 
       : (player.is_bot ? '🤖' : '👤');
 
+    let timerBadgeHtml = isTurn ? `<div class="seat-timer-badge" id="seat-timer-${player.user_id}">25s</div>` : '';
+
     seatEl.innerHTML = `
       ${betChipHtml}
       ${kickBtnHtml}
       <div class="player-avatar-box">
         <div class="player-avatar">${avatarImg}</div>
         ${dealerHtml}
+        ${timerBadgeHtml}
       </div>
       ${foldBadgeHtml}
       <div class="player-info-pill">
@@ -288,6 +383,42 @@ function renderGameState(state) {
   }
 
   previousPlayerIds = currentIds;
+
+  // Update 25s Countdown Timer on active turn seat
+  if (turnTimerInterval) {
+    clearInterval(turnTimerInterval);
+    turnTimerInterval = null;
+  }
+
+  if (state.in_hand && state.turn_deadline) {
+    const updateCountdown = () => {
+      const now = Date.now() / 1000;
+      const remaining = Math.max(0, Math.ceil(state.turn_deadline - now));
+      const activeTimerEl = document.getElementById(`seat-timer-${state.turn_user_id}`);
+      if (activeTimerEl) {
+        activeTimerEl.innerText = `${remaining}s`;
+        if (remaining <= 5) {
+          activeTimerEl.classList.add('urgent');
+        } else {
+          activeTimerEl.classList.remove('urgent');
+        }
+      }
+    };
+    updateCountdown();
+    turnTimerInterval = setInterval(updateCountdown, 500);
+  }
+
+  // Audio Triggers based on State Changes
+  const communityCount = (state.community_cards || []).length;
+  if (!previousInHand && state.in_hand) {
+    playSound('card'); // Deal starting hands
+  } else if (communityCount > previousCommunityCount) {
+    playSound('community'); // Flop, Turn, or River deal
+  }
+
+  previousInHand = state.in_hand;
+  previousCommunityCount = communityCount;
+  previousStage = state.stage;
 
   // Action Panel Controls
   const isMyTurn = state.in_hand && (state.turn_user_id === currentUser.id);
@@ -308,10 +439,29 @@ function renderGameState(state) {
       btnCallLabel.innerText = `Call (${toCall})`;
     }
 
+    // Configure Raise Slider from 0 / step all the way up to ALL-IN (player's full chips)
+    const myPlayer = players.find(p => p.user_id === currentUser.id);
+    const maxChipsAvailable = myPlayer ? myPlayer.chips : 1000;
+    const maxRaise = Math.max(0, maxChipsAvailable - toCall);
     const raiseStep = state.raise_step || 20;
-    raiseSlider.min = raiseStep;
-    raiseSlider.step = raiseStep;
-    raiseAmountVal.innerText = `+${raiseSlider.value}`;
+
+    raiseSlider.min = 0;
+    raiseSlider.max = maxRaise;
+    raiseSlider.step = Math.min(raiseStep, Math.max(1, maxRaise));
+
+    if (parseInt(raiseSlider.value) > maxRaise || parseInt(raiseSlider.value) === 0) {
+      raiseSlider.value = Math.min(raiseStep, maxRaise);
+    }
+
+    const curVal = parseInt(raiseSlider.value);
+    if (curVal >= maxRaise && maxRaise > 0) {
+      raiseAmountVal.innerText = `ALL IN (${curVal})`;
+      btnRaiseLabel.innerText = `ALL IN (${curVal})`;
+    } else {
+      raiseAmountVal.innerText = `+${curVal}`;
+      btnRaiseLabel.innerText = `Raise (+${curVal})`;
+    }
+    btnRaise.disabled = !isMyTurn || maxRaise === 0;
   } else {
     controlsPlayingEl.style.display = 'none';
     controlsWaitingEl.style.display = 'block';
@@ -351,6 +501,7 @@ function renderGameState(state) {
 }
 
 function showWinnerModal(winInfo) {
+  playSound('win');
   const winnerNames = winInfo.winners ? winInfo.winners.join(', ') : 'Player';
   winHeadline.innerText = `🏆 ${winnerNames} WON!`;
   winPotTag.innerText = `+${winInfo.pot} 🪙 POT`;
@@ -573,16 +724,32 @@ window.kickPlayer = function(userId, name) {
 };
 
 // Event Listeners
-btnFold.addEventListener('click', () => sendAction('fold'));
-btnCall.addEventListener('click', () => sendAction('call'));
+btnFold.addEventListener('click', () => {
+  playSound('fold');
+  sendAction('fold');
+});
+
+btnCall.addEventListener('click', () => {
+  playSound('chips');
+  sendAction('call');
+});
+
 btnRaise.addEventListener('click', () => {
+  playSound('chips');
   const raiseVal = parseInt(raiseSlider.value) || 20;
   sendAction('raise', raiseVal);
 });
 
 raiseSlider.addEventListener('input', (e) => {
-  raiseAmountVal.innerText = `+${e.target.value}`;
-  btnRaiseLabel.innerText = `Raise (+${e.target.value})`;
+  const val = parseInt(e.target.value);
+  const max = parseInt(e.target.max);
+  if (val >= max && max > 0) {
+    raiseAmountVal.innerText = `ALL IN (${val})`;
+    btnRaiseLabel.innerText = `ALL IN (${val})`;
+  } else {
+    raiseAmountVal.innerText = `+${val}`;
+    btnRaiseLabel.innerText = `Raise (+${val})`;
+  }
 });
 
 btnStartGame.addEventListener('click', () => {

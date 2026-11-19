@@ -48,32 +48,46 @@ async def broadcast_all_tables():
                 pass
 
 async def check_bot_turn(table: PokerTable):
-    """If the current turn belongs to a bot, take an automated decision after a short delay."""
+    """If the current turn belongs to a bot or if a player times out (25s), auto-act."""
+    import time
     while table.in_hand:
         current_player = table.players[table.turn_idx]
-        if not current_player.is_bot:
-            break
-
-        await asyncio.sleep(1.2)
-        to_call = max(0, table.current_highest_bet - current_player.current_bet)
         
-        if to_call == 0:
-            action = "call"
-        elif to_call <= current_player.chips * 0.2:
-            dice = random.random()
-            if dice < 0.75:
+        if current_player.is_bot:
+            await asyncio.sleep(1.2)
+            to_call = max(0, table.current_highest_bet - current_player.current_bet)
+            
+            if to_call == 0:
                 action = "call"
-            elif dice < 0.9 and current_player.chips >= to_call + 20:
-                action = "raise"
+            elif to_call <= current_player.chips * 0.2:
+                dice = random.random()
+                if dice < 0.75:
+                    action = "call"
+                elif dice < 0.9 and current_player.chips >= to_call + 20:
+                    action = "raise"
+                else:
+                    action = "fold"
             else:
-                action = "fold"
-        else:
-            dice = random.random()
-            action = "call" if dice < 0.4 else "fold"
+                dice = random.random()
+                action = "call" if dice < 0.4 else "fold"
 
-        async with table.lock:
-            game_manager.handle_action(table, current_player.user_id, action)
-            await broadcast_table_state(table)
+            async with table.lock:
+                game_manager.handle_action(table, current_player.user_id, action)
+                await broadcast_table_state(table)
+        else:
+            # Human player's turn: check if 25s deadline exceeded
+            now = time.time()
+            if table.turn_deadline and now >= table.turn_deadline:
+                # Player timed out: Auto-fold (or check if to_call == 0)
+                to_call = max(0, table.current_highest_bet - current_player.current_bet)
+                action = "call" if to_call == 0 else "fold"
+                async with table.lock:
+                    table.last_log = f"{current_player.name} timed out (25s) and {action}ed."
+                    game_manager.handle_action(table, current_player.user_id, action)
+                    await broadcast_table_state(table)
+            else:
+                # Sleep briefly and recheck
+                await asyncio.sleep(0.5)
 
 
 class IndexHandler(tornado.web.RequestHandler):
@@ -104,15 +118,25 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
             table_connections[self.table_id] = set()
         table_connections[self.table_id].add(self)
 
-        # If connected to a real game room (not lobby), remove from previous and add to table
+        # If connected to a real game room (not lobby), check if game is mid-turn
         if self.table_id != "lobby":
+            target_table = game_manager.get_or_create_table(self.table_id)
+            # Check if game is in progress and player is not already seated
+            is_already_seated = any(p.user_id == self.user_id for p in target_table.players)
+            if target_table.in_hand and not is_already_seated:
+                self.write_message(json.dumps({
+                    "type": "error_redirect_lobby",
+                    "message": "This game is already running! Please wait for the current hand to end or join another table."
+                }))
+                return
+
             affected_old_tables = game_manager.remove_player_from_all_tables(self.user_id, except_table_id=self.table_id)
             for old_tid in affected_old_tables:
                 old_table = game_manager.tables.get(old_tid)
                 if old_table:
                     asyncio.create_task(broadcast_table_state(old_table))
 
-            table = game_manager.get_or_create_table(self.table_id)
+            table = target_table
             try:
                 game_manager.add_player(
                     table_id=self.table_id,
@@ -293,6 +317,11 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                             }))
                         except Exception:
                             pass
+
+                # Save kicked player chips to their bankroll before removal
+                kicked_p = next((p for p in table.players if p.user_id == target_user_id), None)
+                if kicked_p and not kicked_p.is_bot:
+                    user_bankrolls[target_user_id] = kicked_p.chips
 
                 async with table.lock:
                     game_manager.remove_player(self.table_id, target_user_id)

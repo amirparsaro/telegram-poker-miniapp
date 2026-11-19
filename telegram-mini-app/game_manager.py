@@ -55,6 +55,7 @@ class PokerTable:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_log: str = ""
     winner_info: Optional[dict] = None
+    turn_deadline: float = 0.0
 
     def active_players(self) -> List[Player]:
         return [p for p in self.players if not p.folded and (p.chips > 0 or p.total_hand_bet > 0)]
@@ -91,6 +92,7 @@ class PokerTable:
             "small_blind": SMALL_BLIND,
             "big_blind": BIG_BLIND,
             "raise_step": RAISE_STEP,
+            "turn_deadline": self.turn_deadline,
             "last_log": self.last_log,
             "winner_info": self.winner_info
         }
@@ -251,11 +253,16 @@ class GameManager:
                 return False
         return True
 
+    def _reset_turn_timer(self, table: PokerTable):
+        import time
+        table.turn_deadline = time.time() + 25.0
+
     def start_hand(self, table: PokerTable) -> bool:
         eligible = [p for p in table.players if p.chips > 0]
         if len(eligible) < 2:
             table.in_hand = False
             table.stage = "WAITING"
+            table.turn_deadline = 0.0
             table.last_log = "Need at least 2 players with chips to start."
             return False
 
@@ -288,6 +295,7 @@ class GameManager:
         if table.players[table.turn_idx].folded:
             self._advance_turn(table)
 
+        self._reset_turn_timer(table)
         table.last_log = f"Hand started! Blinds: {SMALL_BLIND}/{BIG_BLIND}. Turn: {table.players[table.turn_idx].name}."
         return True
 
@@ -319,6 +327,7 @@ class GameManager:
             self.next_stage(table)
             return
 
+        self._reset_turn_timer(table)
         table.last_log = f"Stage: {table.stage}. Turn: {table.players[table.turn_idx].name}."
 
     def finish_hand_by_fold(self, table: PokerTable, winner: Player):
@@ -333,6 +342,7 @@ class GameManager:
         }
         table.pot = 0
         table.in_hand = False
+        table.turn_deadline = 0.0
         table.stage = "WAITING"
 
     def showdown(self, table: PokerTable):
@@ -367,6 +377,7 @@ class GameManager:
         }
         table.pot = 0
         table.in_hand = False
+        table.turn_deadline = 0.0
         table.stage = "WAITING"
 
     def handle_action(self, table: PokerTable, user_id: int, action: str, raise_amount: Optional[int] = None) -> Optional[str]:
@@ -421,4 +432,5 @@ class GameManager:
             return None
 
         self._advance_turn(table)
+        self._reset_turn_timer(table)
         return None
