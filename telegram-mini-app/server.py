@@ -265,9 +265,12 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 game_manager.delete_table(del_id)
                 await broadcast_all_tables()
 
-            elif msg_type == "admin_remove_player":
-                if not self.is_admin:
-                    return self.write_message(json.dumps({"type": "error", "message": "Admin privileges required"}))
+            elif msg_type == "admin_remove_player" or msg_type == "kick_player":
+                if not table:
+                    return self.write_message(json.dumps({"type": "error", "message": "Not in a valid game room."}))
+                can_kick = self.is_admin or (table.creator_id is not None and table.creator_id == self.user_id)
+                if not can_kick:
+                    return self.write_message(json.dumps({"type": "error", "message": "Only the room creator or an admin can kick players."}))
                 target_user_id = int(payload.get("user_id"))
                 async with table.lock:
                     game_manager.remove_player(self.table_id, target_user_id)

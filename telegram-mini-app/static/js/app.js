@@ -224,12 +224,16 @@ function renderGameState(state) {
 
     let dealerHtml = isDealer ? `<div class="dealer-button">D</div>` : '';
 
+    const canKickOthers = (isAdmin || (state.creator_id && state.creator_id === currentUser.id)) && player.user_id !== currentUser.id;
+    let kickBtnHtml = canKickOthers ? `<button class="seat-kick-btn" onclick="event.stopPropagation(); kickPlayer(${player.user_id}, '${player.name}')">×</button>` : '';
+
     let avatarImg = player.avatar 
       ? `<img src="${player.avatar}" alt="${player.name}"/>` 
       : (player.is_bot ? '🤖' : '👤');
 
     seatEl.innerHTML = `
       ${betChipHtml}
+      ${kickBtnHtml}
       <div class="player-avatar-box">
         <div class="player-avatar">${avatarImg}</div>
         ${dealerHtml}
@@ -471,9 +475,13 @@ window.promptSetChips = function(userId, currentChips) {
 };
 
 window.adminKickPlayer = function(userId, name) {
-  if (confirm(`Remove ${name} from this table?`)) {
+  kickPlayer(userId, name);
+};
+
+window.kickPlayer = function(userId, name) {
+  if (confirm(`Kick ${name} from this room?`)) {
     ws.send(JSON.stringify({
-      type: 'admin_remove_player',
+      type: 'kick_player',
       user_id: userId
     }));
   }
