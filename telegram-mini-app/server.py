@@ -218,7 +218,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 await broadcast_all_tables()
                 self.write_message(json.dumps({"type": "room_created", "table_id": new_table_id}))
 
-            elif msg_type == "delete_room":
+            elif msg_type == "delete_room" or msg_type == "admin_delete_table":
                 del_id = payload.get("table_id")
                 target_table = game_manager.tables.get(del_id)
                 if not target_table:
@@ -228,9 +228,22 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 can_delete = self.is_admin or (target_table.creator_id is not None and target_table.creator_id == self.user_id)
                 if not can_delete:
                     return self.write_message(json.dumps({"type": "error", "message": "Only the room creator or an admin can delete this room."}))
-                
-                if del_id == self.table_id:
-                    return self.write_message(json.dumps({"type": "error", "message": "Cannot delete active table while connected to it."}))
+
+                # Notify and redirect all players currently connected to this deleted room
+                room_clients = table_connections.get(del_id, set())
+                for client in list(room_clients):
+                    try:
+                        client.write_message(json.dumps({
+                            "type": "room_deleted",
+                            "message": f"Room '{target_table.name}' was closed by the creator/admin."
+                        }))
+                    except Exception:
+                        pass
+
+                # Preserve chips back to user_bankrolls for all players in table
+                for player in target_table.players:
+                    if not player.is_bot:
+                        user_bankrolls[player.user_id] = player.chips
 
                 game_manager.delete_table(del_id)
                 await broadcast_all_tables()
@@ -254,15 +267,6 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 new_table_id = payload.get("table_id") or f"table_{random.randint(100, 999)}"
                 new_name = payload.get("name") or f"Table {new_table_id}"
                 game_manager.create_table(new_table_id, new_name)
-                await broadcast_all_tables()
-
-            elif msg_type == "admin_delete_table":
-                if not self.is_admin:
-                    return self.write_message(json.dumps({"type": "error", "message": "Admin privileges required"}))
-                del_id = payload.get("table_id")
-                if del_id == self.table_id:
-                    return self.write_message(json.dumps({"type": "error", "message": "Cannot delete active table while connected to it."}))
-                game_manager.delete_table(del_id)
                 await broadcast_all_tables()
 
             elif msg_type == "admin_remove_player" or msg_type == "kick_player":

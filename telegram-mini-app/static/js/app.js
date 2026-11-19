@@ -129,6 +129,9 @@ function connectWebSocket() {
       } else if (msg.type === 'kicked') {
         alert(msg.message || 'You have been kicked from the table.');
         switchTable('lobby');
+      } else if (msg.type === 'room_deleted') {
+        alert(msg.message || 'This room was deleted. Returning to lobby.');
+        switchTable('lobby');
       } else if (msg.type === 'error') {
         alert(msg.message);
       }
