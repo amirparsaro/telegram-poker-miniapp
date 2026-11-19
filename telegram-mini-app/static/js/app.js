@@ -272,9 +272,14 @@ function renderGameState(state) {
     controlsPlayingEl.style.display = 'none';
     controlsWaitingEl.style.display = 'block';
 
-    const canStart = isAdmin || (state.creator_id && state.creator_id === currentUser.id);
+    const canManageRoom = isAdmin || (state.creator_id && state.creator_id === currentUser.id);
 
-    if (!canStart) {
+    // Hide or show the + Bot button depending on room permissions
+    if (btnAddBot) {
+      btnAddBot.style.display = canManageRoom ? 'inline-block' : 'none';
+    }
+
+    if (!canManageRoom) {
       btnStartGame.disabled = true;
       btnStartGame.innerText = `Waiting for creator to start... (${players.length} Players)`;
     } else {

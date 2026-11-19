@@ -185,6 +185,17 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
                 asyncio.create_task(check_bot_turn(table))
 
             elif msg_type == "add_bot":
+                if not table:
+                    return self.write_message(json.dumps({"type": "error", "message": "Not in a valid game room."}))
+
+                # Check permission: Only room creator or admin can add bots
+                can_add_bot = self.is_admin or (table.creator_id is not None and table.creator_id == self.user_id) or (table.creator_id is None and self.is_admin)
+                if not can_add_bot:
+                    return self.write_message(json.dumps({
+                        "type": "error",
+                        "message": "Only the room creator or an admin can add bots."
+                    }))
+
                 bot_names = ["PokerBot Alex", "Card Shark Sam", "Bluff Master Leo", "Lucky Daisy", "Ace Hunter", "Chip King"]
                 existing_names = [p.name for p in table.players]
                 available = [n for n in bot_names if n not in existing_names]
