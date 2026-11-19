@@ -151,7 +151,7 @@ class PokerWebSocketHandler(tornado.websocket.WebSocketHandler):
         try:
             payload = json.loads(message)
             msg_type = payload.get("type")
-            table = game_manager.get_or_create_table(self.table_id)
+            table = game_manager.tables.get(self.table_id) if self.table_id != "lobby" else None
 
             # Player Actions
             if msg_type == "start_game":

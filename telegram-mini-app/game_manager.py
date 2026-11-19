@@ -137,6 +137,7 @@ class GameManager:
                 ]
             }
             for t in self.tables.values()
+            if t.table_id != "lobby"
         ]
 
     def remove_player_from_all_tables(self, user_id: int, except_table_id: Optional[str] = None) -> List[str]:
