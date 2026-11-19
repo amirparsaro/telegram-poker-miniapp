@@ -41,6 +41,7 @@ class Player:
 @dataclass
 class PokerTable:
     table_id: str
+    name: str = "Main Room"
     players: List[Player] = field(default_factory=list)
     in_hand: bool = False
     stage: str = "WAITING"  # WAITING, PREFLOP, FLOP, TURN, RIVER, SHOWDOWN
@@ -74,6 +75,7 @@ class PokerTable:
 
         return {
             "table_id": self.table_id,
+            "name": self.name,
             "in_hand": self.in_hand,
             "stage": self.stage,
             "pot": self.pot,
@@ -95,13 +97,41 @@ class PokerTable:
 class GameManager:
     def __init__(self):
         self.tables: Dict[str, PokerTable] = {}
+        # Create default table
+        self.create_table("main_room", "Standard Table")
+
+    def create_table(self, table_id: str, name: str = "") -> PokerTable:
+        if not name:
+            name = f"Table {table_id}"
+        table = PokerTable(table_id=table_id, name=name)
+        self.tables[table_id] = table
+        return table
+
+    def delete_table(self, table_id: str) -> bool:
+        if table_id in self.tables:
+            del self.tables[table_id]
+            return True
+        return False
+
+    def list_tables(self) -> List[dict]:
+        return [
+            {
+                "table_id": t.table_id,
+                "name": t.name,
+                "player_count": len(t.players),
+                "in_hand": t.in_hand,
+                "stage": t.stage,
+                "pot": t.pot
+            }
+            for t in self.tables.values()
+        ]
 
     def get_or_create_table(self, table_id: str) -> PokerTable:
         if table_id not in self.tables:
-            self.tables[table_id] = PokerTable(table_id=table_id)
+            self.create_table(table_id)
         return self.tables[table_id]
 
-    def add_player(self, table_id: str, user_id: int, name: str, avatar: str = "", is_bot: bool = False) -> Player:
+    def add_player(self, table_id: str, user_id: int, name: str, avatar: str = "", is_bot: bool = False, chips: int = STARTING_CHIPS) -> Player:
         table = self.get_or_create_table(table_id)
         for p in table.players:
             if p.user_id == user_id:
@@ -111,10 +141,64 @@ class GameManager:
                 return p
         if len(table.players) >= 6:
             raise ValueError("Table is full (max 6 players)")
-        player = Player(user_id=user_id, name=name, avatar=avatar, chips=STARTING_CHIPS, is_bot=is_bot)
+        player = Player(user_id=user_id, name=name, avatar=avatar, chips=chips, is_bot=is_bot)
         table.players.append(player)
-        table.last_log = f"{name} joined the table."
+        table.last_log = f"{name} joined table {table.name}."
         return player
+
+    def remove_player(self, table_id: str, user_id: int) -> Optional[Player]:
+        if table_id not in self.tables:
+            return None
+        table = self.tables[table_id]
+        target = next((p for p in table.players if p.user_id == user_id), None)
+        if not target:
+            return None
+
+        # If in hand and player is in hand, fold them first
+        if table.in_hand and not target.folded:
+            target.folded = True
+            contenders = table.contenders()
+            if len(contenders) <= 1:
+                if len(contenders) == 1:
+                    self.finish_hand_by_fold(table, contenders[0])
+                else:
+                    self.reset_hand(table)
+
+        table.players = [p for p in table.players if p.user_id != user_id]
+        if table.players:
+            table.turn_idx = table.turn_idx % len(table.players)
+            table.dealer_idx = table.dealer_idx % len(table.players)
+        else:
+            self.reset_hand(table)
+
+        table.last_log = f"{target.name} was removed from the table."
+        return target
+
+    def set_player_chips(self, table_id: str, user_id: int, chips: int) -> bool:
+        if table_id not in self.tables:
+            return False
+        table = self.tables[table_id]
+        p = next((p for p in table.players if p.user_id == user_id), None)
+        if p:
+            p.chips = max(0, chips)
+            table.last_log = f"{p.name}'s chips updated to {p.chips}."
+            return True
+        return False
+
+    def reset_hand(self, table: PokerTable):
+        table.in_hand = False
+        table.stage = "WAITING"
+        table.pot = 0
+        table.community_cards = []
+        table.current_highest_bet = 0
+        table.winner_info = None
+        for p in table.players:
+            p.current_bet = 0
+            p.total_hand_bet = 0
+            p.folded = False
+            p.acted_in_round = False
+            p.hand = []
+        table.last_log = "Game was reset by administrator."
 
     def _post_blind(self, table: PokerTable, player: Player, amount: int):
         paid = min(player.chips, amount)
@@ -142,7 +226,7 @@ class GameManager:
                 return False
         return True
 
-    def start_hand(self, table: PokerTable):
+    def start_hand(self, table: PokerTable) -> bool:
         eligible = [p for p in table.players if p.chips > 0]
         if len(eligible) < 2:
             table.in_hand = False
@@ -234,7 +318,6 @@ class GameManager:
             rank_type, tiebreakers, desc = evaluate_hand(all_cards)
             scores.append((rank_type, tiebreakers, desc, p))
 
-        # Highest rank_type, then tiebreakers
         scores.sort(key=lambda s: (s[0], s[1]), reverse=True)
         best_score = (scores[0][0], scores[0][1])
 

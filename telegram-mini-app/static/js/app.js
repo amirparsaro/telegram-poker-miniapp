@@ -7,7 +7,8 @@ if (tg) {
 
 // Extract table_id and user_id from Telegram initData or URL search params
 const urlParams = new URLSearchParams(window.location.search);
-const tableId = urlParams.get('table') || 'main_room';
+let tableId = urlParams.get('table') || 'main_room';
+let adminToken = urlParams.get('admin_token') || localStorage.getItem('poker_admin_token') || '';
 
 // Telegram User info or Fallback
 let currentUser = {
@@ -29,8 +30,11 @@ if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
 let ws = null;
 let currentGameState = null;
 let reconnectTimer = null;
+let isAdmin = false;
+let availableTables = [];
 
 // UI Elements
+const tableDisplayNameEl = document.getElementById('table-display-name');
 const potAmountEl = document.getElementById('pot-amount');
 const communityCardsEl = document.getElementById('community-cards');
 const seatsContainerEl = document.getElementById('seats-container');
@@ -48,9 +52,28 @@ const raiseAmountVal = document.getElementById('raise-amount-val');
 const btnStartGame = document.getElementById('btn-start-game');
 const btnAddBot = document.getElementById('btn-add-bot');
 
+// Admin & Modal Elements
+const modalRooms = document.getElementById('modal-rooms');
+const roomsListContainer = document.getElementById('rooms-list-container');
+const btnTables = document.getElementById('btn-tables');
+const btnCloseRooms = document.getElementById('btn-close-rooms');
+
+const modalAdmin = document.getElementById('modal-admin');
+const btnAdminPanel = document.getElementById('btn-admin-panel');
+const btnCloseAdmin = document.getElementById('btn-close-admin');
+const adminLoginBox = document.getElementById('admin-login-box');
+const adminActionsBox = document.getElementById('admin-actions-box');
+const adminPassInput = document.getElementById('admin-pass-input');
+const btnAdminSubmitPass = document.getElementById('btn-admin-submit-pass');
+const btnAdminForceStart = document.getElementById('btn-admin-force-start');
+const btnAdminResetHand = document.getElementById('btn-admin-reset-hand');
+const btnAdminCreateRoom = document.getElementById('btn-admin-create-room');
+const adminNewRoomName = document.getElementById('admin-new-room-name');
+const adminPlayersList = document.getElementById('admin-players-list');
+
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws?table_id=${tableId}&user_id=${currentUser.id}&name=${encodeURIComponent(currentUser.name)}&avatar=${encodeURIComponent(currentUser.avatar)}`;
+  const wsUrl = `${protocol}//${window.location.host}/ws?table_id=${tableId}&user_id=${currentUser.id}&name=${encodeURIComponent(currentUser.name)}&avatar=${encodeURIComponent(currentUser.avatar)}&admin_token=${encodeURIComponent(adminToken)}`;
 
   ws = new WebSocket(wsUrl);
 
@@ -62,8 +85,15 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'state') {
+      if (msg.type === 'init') {
+        if (msg.is_admin) setAdminAuthorized(true);
+        if (msg.tables) renderRoomsList(msg.tables);
+      } else if (msg.type === 'state') {
         renderGameState(msg.data);
+      } else if (msg.type === 'tables_list') {
+        renderRoomsList(msg.tables);
+      } else if (msg.type === 'admin_auth_success') {
+        setAdminAuthorized(true);
       } else if (msg.type === 'error') {
         alert(msg.message);
       }
@@ -115,7 +145,7 @@ function renderCard(card, isSmall = false) {
 function renderGameState(state) {
   currentGameState = state;
 
-  // Header & Pot
+  tableDisplayNameEl.innerText = state.name ? `♠ ${state.name.toUpperCase()}` : '♠ TEXAS HOLD\'EM';
   stageBadgeEl.innerText = state.stage;
   potAmountEl.innerText = state.pot;
   gameLogEl.innerHTML = `<span>${state.last_log || 'Waiting for action...'}</span>`;
@@ -128,7 +158,6 @@ function renderGameState(state) {
   }
 
   // Seats & Players
-  // We arrange seats so current user is always seat-0 (bottom)
   const players = state.players || [];
   let userIdx = players.findIndex(p => p.user_id === currentUser.id);
   if (userIdx === -1) userIdx = 0;
@@ -137,7 +166,6 @@ function renderGameState(state) {
   const numPlayers = players.length;
 
   for (let i = 0; i < numPlayers; i++) {
-    // Relative position
     const relPos = (i - userIdx + 6) % 6;
     const player = players[i];
     const isTurn = state.in_hand && (i === state.turn_idx);
@@ -205,7 +233,6 @@ function renderGameState(state) {
       btnCallLabel.innerText = `Call (${toCall})`;
     }
 
-    // Configure Raise slider
     const raiseStep = state.raise_step || 20;
     raiseSlider.min = raiseStep;
     raiseSlider.step = raiseStep;
@@ -219,7 +246,103 @@ function renderGameState(state) {
       ? `Waiting for players (${players.length}/2 min)...` 
       : `Deal New Hand (${players.length} Players)`;
   }
+
+  if (isAdmin) {
+    renderAdminPlayers(players);
+  }
 }
+
+function renderRoomsList(tables) {
+  availableTables = tables || [];
+  roomsListContainer.innerHTML = '';
+  availableTables.forEach(t => {
+    const item = document.createElement('div');
+    item.className = 'room-item';
+    const isCurrent = t.table_id === tableId;
+    item.innerHTML = `
+      <div class="room-info">
+        <div class="room-name">${t.name} ${isCurrent ? '<span style="color:var(--gold); font-size:11px;">(Current)</span>' : ''}</div>
+        <div class="room-sub">${t.player_count} players • ${t.stage} • Pot: ${t.pot}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        ${!isCurrent ? `<button class="room-action-btn" onclick="switchTable('${t.table_id}')">Join</button>` : ''}
+        ${isAdmin && !isCurrent ? `<button class="room-action-btn danger" onclick="deleteTable('${t.table_id}')">Delete</button>` : ''}
+      </div>
+    `;
+    roomsListContainer.appendChild(item);
+  });
+}
+
+window.switchTable = function(newTableId) {
+  tableId = newTableId;
+  modalRooms.style.display = 'none';
+  if (ws) ws.close();
+  connectWebSocket();
+};
+
+window.deleteTable = function(delTableId) {
+  if (confirm(`Delete table ${delTableId}?`)) {
+    ws.send(JSON.stringify({ type: 'admin_delete_table', table_id: delTableId }));
+  }
+};
+
+function setAdminAuthorized(authorized) {
+  isAdmin = authorized;
+  if (authorized) {
+    adminLoginBox.style.display = 'none';
+    adminActionsBox.style.display = 'block';
+    btnAdminPanel.style.borderColor = 'var(--gold)';
+    btnAdminPanel.style.color = 'var(--gold)';
+    if (currentGameState) renderAdminPlayers(currentGameState.players || []);
+  } else {
+    adminLoginBox.style.display = 'block';
+    adminActionsBox.style.display = 'none';
+  }
+}
+
+function renderAdminPlayers(players) {
+  adminPlayersList.innerHTML = '';
+  if (!players || players.length === 0) {
+    adminPlayersList.innerHTML = '<div style="color:var(--text-muted); font-size:12px;">No players at this table.</div>';
+    return;
+  }
+
+  players.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'admin-player-row';
+    row.innerHTML = `
+      <div>
+        <span style="font-weight:700;">${p.name}</span>
+        <span style="font-size:11px; color:var(--text-muted);">(${p.chips} 🪙)</span>
+      </div>
+      <div style="display:flex; gap:4px;">
+        <button class="admin-chip-btn" onclick="promptSetChips(${p.user_id}, ${p.chips})">✏️ Chips</button>
+        <button class="admin-kick-btn" onclick="adminKickPlayer(${p.user_id}, '${p.name}')">❌ Kick</button>
+      </div>
+    `;
+    adminPlayersList.appendChild(row);
+  });
+}
+
+window.promptSetChips = function(userId, currentChips) {
+  const val = prompt('Set new chip amount:', currentChips);
+  if (val !== null && !isNaN(val)) {
+    ws.send(JSON.stringify({
+      type: 'admin_set_chips',
+      user_id: userId,
+      chips: parseInt(val)
+    }));
+  }
+};
+
+window.adminKickPlayer = function(userId, name) {
+  if (confirm(`Remove ${name} from this table?`)) {
+    ws.send(JSON.stringify({
+      type: 'admin_remove_player',
+      user_id: userId
+    }));
+  }
+};
 
 // Event Listeners
 btnFold.addEventListener('click', () => sendAction('fold'));
@@ -243,6 +366,43 @@ btnStartGame.addEventListener('click', () => {
 btnAddBot.addEventListener('click', () => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'add_bot' }));
+  }
+});
+
+// Modals Open/Close
+btnTables.addEventListener('click', () => { modalRooms.style.display = 'flex'; });
+btnCloseRooms.addEventListener('click', () => { modalRooms.style.display = 'none'; });
+
+btnAdminPanel.addEventListener('click', () => { modalAdmin.style.display = 'flex'; });
+btnCloseAdmin.addEventListener('click', () => { modalAdmin.style.display = 'none'; });
+
+// Admin Password Form
+btnAdminSubmitPass.addEventListener('click', () => {
+  const pass = adminPassInput.value.trim();
+  if (pass) {
+    adminToken = pass;
+    localStorage.setItem('poker_admin_token', pass);
+    ws.send(JSON.stringify({ type: 'admin_auth', token: pass }));
+  }
+});
+
+btnAdminForceStart.addEventListener('click', () => {
+  ws.send(JSON.stringify({ type: 'admin_force_start' }));
+});
+
+btnAdminResetHand.addEventListener('click', () => {
+  if (confirm('Reset this table to initial state?')) {
+    ws.send(JSON.stringify({ type: 'admin_reset_hand' }));
+  }
+});
+
+btnAdminCreateRoom.addEventListener('click', () => {
+  const name = adminNewRoomName.value.trim();
+  if (name) {
+    const id = 'room_' + Math.floor(100 + Math.random() * 900);
+    ws.send(JSON.stringify({ type: 'admin_create_table', table_id: id, name: name }));
+    adminNewRoomName.value = '';
+    alert(`Created room "${name}"!`);
   }
 });
 
